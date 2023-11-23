@@ -1563,7 +1563,7 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
     private void releaseTransaction() {
         isOpen = false;
         graph.closeTransaction(this);
-        vertexCache = EmptyVertexCache.getInstance();
+        //vertexCache = EmptyVertexCache.getInstance();
         indexCache = EmptySubqueryCache.getInstance();
         addedRelations = EmptyAddedRelations.getInstance();
         deletedRelations = Collections.emptyMap();

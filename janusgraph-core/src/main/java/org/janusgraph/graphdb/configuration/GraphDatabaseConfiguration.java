@@ -355,6 +355,46 @@ public class GraphDatabaseConfiguration {
             "transaction to independently fetch graph elements from storage before reading/writing them.",
             ConfigOption.Type.MASKABLE, false);
 
+    public static final ConfigOption<String> CACHE_TYPE = new ConfigOption<>(CACHE_NS,"cache-type",
+        "Enable or disable Redis cache (redis/inmemory)",
+        ConfigOption.Type.MASKABLE, "inmemory");
+
+    public static final ConfigOption<String> REDIS_CACHE_SENTINEL_URLS = new ConfigOption<>(CACHE_NS,"redis-cache-sentinel-urls",
+        "csv values for multiple redis sentinel host:port urls.",
+        ConfigOption.Type.MASKABLE, "localhost:26379");
+
+    public static final ConfigOption<String> REDIS_CACHE_SERVER_URL = new ConfigOption<>(CACHE_NS,"redis-cache-server-url",
+        "Redis server url.",
+        ConfigOption.Type.MASKABLE, "localhost:6379");
+
+    public static final ConfigOption<String> REDIS_CACHE_SERVER_MODE = new ConfigOption<>(CACHE_NS,"redis-cache-server-mode",
+        "Redis connection mode, either single or sentinel connection",
+        ConfigOption.Type.MASKABLE, "single");
+
+    public static final ConfigOption<Long> REDIS_CACHE_LOCK_WATCHDOG_TIMEOUT_MS = new ConfigOption<>(CACHE_NS,"redis-cache-lock-watchdog-ms",
+        "This prevents against infinity locked locks due to Redisson client crush or any other reason when lock can't be released in proper way.",
+        ConfigOption.Type.MASKABLE, 600_000L);
+
+    public static final ConfigOption<String> REDIS_CACHE_USERNAME = new ConfigOption<>(CACHE_NS,"redis-cache-username",
+        "Username for Redis authentication.", ConfigOption.Type.MASKABLE, "default");
+
+    public static final ConfigOption<String> REDIS_CACHE_PASSWORD = new ConfigOption<>(CACHE_NS,"redis-cache-password",
+        "Password for Redis authentication.", ConfigOption.Type.MASKABLE, "password");
+
+    public static final ConfigOption<String> REDIS_CACHE_MASTER_NAME = new ConfigOption<>(CACHE_NS,"redis-cache-mastername",
+        "Master server name used by Redis Sentinel servers and master change monitoring task.", ConfigOption.Type.MASKABLE, "mymaster");
+
+
+    public static final ConfigOption<Integer> REDIS_CACHE_CONNECTION_TIME_OUT = new ConfigOption<>(CACHE_NS,"redis-cache" +
+        "-connectTimeout",
+        "Timeout during connecting to any Redis server.",
+        ConfigOption.Type.MASKABLE, 1000);
+
+    public static final ConfigOption<Boolean> REDIS_CACHE_KEEP_ALIVE = new ConfigOption<>(CACHE_NS,"redis-cache" +
+        "-keepAlive",
+        "Enables TCP keepAlive for connection.",
+        ConfigOption.Type.MASKABLE, true);
+
     /**
      * The size of the database level cache.
      * If this value is between 0.0 (strictly bigger) and 1.0 (strictly smaller), then it is interpreted as a
