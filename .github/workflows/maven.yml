@@ -57,4 +57,4 @@ jobs:
       - name: Publish to GitHub Packages Apache Maven
         run: mvn deploy -Dcheckstyle.skip -Drat.skip=true -Dit.skip=true -Denforcer.skip=true -Dmaven.javadoc.skip=true ${{ env.BUILD_MAVEN_OPTS }}
         env:
-          GITHUB_TOKEN: ${{ secrets.my_pat }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
