@@ -35,13 +35,13 @@ jobs:
         id: get_branch
 
       - name: Build with Maven
-      - run: |
+        run: |
           branch_name=${{ steps.get_branch.outputs.branch }}
-          if [[ $branch_name == ' v0.6-cache' ]]
+          if [[ $branch_name == 'v0.6-cache' ]]
           then
               echo "Building branch ${branch_name}"
               mvn clean install -Dcheckstyle.skip -Drat.skip=true -Dit.skip=true -Denforcer.skip=true -Dmaven.javadoc.skip=true ${{ env.BUILD_MAVEN_OPTS }}
-
+          fi
 
       - name: Publish to GitHub Packages Apache Maven
         run: mvn --batch-mode deploy
