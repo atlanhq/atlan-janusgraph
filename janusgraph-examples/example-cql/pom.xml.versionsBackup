@@ -3,12 +3,12 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph-examples</artifactId>
-        <version>0.6.6</version>
+        <version>0.6.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
-    <artifactId>example-berkeleyje</artifactId>
+    <artifactId>example-cql</artifactId>
     <packaging>pom</packaging>
-    <name>Example-BerkeleyJE: BerkeleyJE Storage, Lucene Index</name>
+    <name>Example-Cql: Cassandra CQL Storage, Elasticsearch Index</name>
     <url>https://janusgraph.org</url>
 
     <dependencies>
@@ -21,13 +21,13 @@
         </dependency>
         <dependency>
             <groupId>org.janusgraph</groupId>
-            <artifactId>janusgraph-berkeleyje</artifactId>
+            <artifactId>janusgraph-cql</artifactId>
             <version>${project.version}</version>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.janusgraph</groupId>
-            <artifactId>janusgraph-lucene</artifactId>
+            <artifactId>janusgraph-es</artifactId>
             <version>${project.version}</version>
             <scope>runtime</scope>
         </dependency>
@@ -35,7 +35,8 @@
 
     <properties>
         <example.main.class>org.janusgraph.example.JanusGraphApp</example.main.class>
-        <example.config>${project.basedir}/conf/jgex-berkeleyje.properties</example.config>
+        <example.config>${project.basedir}/conf/jgex-cql.properties</example.config>
+        <logback.config>${project.basedir}/conf/logback.xml</logback.config>
     </properties>
 
 </project>

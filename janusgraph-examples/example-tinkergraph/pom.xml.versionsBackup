@@ -3,24 +3,28 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph-examples</artifactId>
-        <version>0.6.6</version>
+        <version>0.6.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
-    <artifactId>example-common</artifactId>
-    <name>Example-Common: Common Graph Code for Examples</name>
+    <artifactId>example-tinkergraph</artifactId>
+    <name>Example-TinkerGraph: Example with TinkerGraph</name>
     <url>https://janusgraph.org</url>
 
     <dependencies>
         <dependency>
             <groupId>org.janusgraph</groupId>
-            <artifactId>janusgraph-core</artifactId>
+            <artifactId>example-common</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.tinkerpop</groupId>
+            <artifactId>tinkergraph-gremlin</artifactId>
         </dependency>
     </dependencies>
 
     <properties>
-        <example.main.class>org.janusgraph.example.JanusGraphApp</example.main.class>
-        <example.config>${project.basedir}/conf/jgex-inmemory.properties</example.config>
+        <example.main.class>org.janusgraph.example.TinkerGraphApp</example.main.class>
+        <example.config>${project.basedir}/conf/jgex-tinkergraph.properties</example.config>
     </properties>
 
 </project>
