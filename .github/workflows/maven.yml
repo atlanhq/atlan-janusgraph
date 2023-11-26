@@ -51,10 +51,10 @@ jobs:
           if [[ $branch_name == 'v0.6-cache' ]]
           then
               echo "Building branch ${branch_name}"
-              mvn clean install -Dcheckstyle.skip -Drat.skip=true -Dit.skip=true -Denforcer.skip=true -Dmaven.javadoc.skip=true ${{ env.BUILD_MAVEN_OPTS }}
+              mvn clean install -Pjanusgraph-release -Dgpg.skip=true -Dcheckstyle.skip -Drat.skip=true -Dit.skip=true -Denforcer.skip=true -Dmaven.javadoc.skip=true ${{ env.BUILD_MAVEN_OPTS }}
           fi
 
       - name: Publish to GitHub Packages Apache Maven
-        run: mvn deploy -pl 'janusgraph-server, janusgraph-core, janusgraph-cql, janusgraph-berkeleyje, janusgraph-es, janusgraph-hbase, janusgraph-solr, janusgraph-lucene' -Dcheckstyle.skip -Drat.skip=true -Dit.skip=true -Denforcer.skip=true -Dmaven.javadoc.skip=true ${{ env.BUILD_MAVEN_OPTS }}
+        run: mvn deploy -pl 'janusgraph-server, janusgraph-core, janusgraph-cql, janusgraph-berkeleyje, janusgraph-es, janusgraph-hbase, janusgraph-solr, janusgraph-lucene' -Pjanusgraph-release -Dgpg.skip=true  -Dcheckstyle.skip -Drat.skip=true -Dit.skip=true -Denforcer.skip=true -Dmaven.javadoc.skip=true ${{ env.BUILD_MAVEN_OPTS }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
