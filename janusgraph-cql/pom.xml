@@ -172,6 +172,10 @@
             <version>${cassandra-driver.version}</version>
             <exclusions>
                 <exclusion>
+                    <groupId>com.datastax.oss</groupId>
+                    <artifactId>java-driver-core</artifactId>
+                </exclusion>
+                <exclusion>
                     <groupId>org.json</groupId>
                     <artifactId>json</artifactId>
                 </exclusion>
