@@ -25,13 +25,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
-import java.util.Objects;
 
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
 
 public class RedissonCache {
 
-    private static RedissonClient client;
     private static final Logger log = LoggerFactory.getLogger(RedissonCache.class);
     private static final String REDIS_URL_PREFIX = "redis://";
     private static final String COMMA = ",";
@@ -44,47 +42,40 @@ public class RedissonCache {
     private static long watchdogTimeoutInMS;
 
     public static RedissonClient getRedissonClient(Configuration configuration) {
-        synchronized (RedissonClient.class) {
-            if (Objects.isNull(client)) {
-                redisServerMode = configuration.get(REDIS_CACHE_SERVER_MODE);
-                connectTimeout = configuration.get(REDIS_CACHE_CONNECTION_TIME_OUT);
-                keepAlive = configuration.get(REDIS_CACHE_KEEP_ALIVE);
-                watchdogTimeoutInMS = configuration.get(REDIS_CACHE_LOCK_WATCHDOG_TIMEOUT_MS);
-                log.info("Creating connection for redis:{}", redisServerMode);
-                System.out.println("Creating connection for redis:"+redisServerMode);
-                Config config = new Config();
-                switch (redisServerMode) {
-                    case SENTINEL:
-                        config.setLockWatchdogTimeout(watchdogTimeoutInMS)
-                            .useSentinelServers()
-                            .setClientName(JANUSGRAPH_REDIS)
-                            .setReadMode(ReadMode.MASTER_SLAVE)
-                            .setCheckSentinelsList(false)
-                            .setConnectTimeout(connectTimeout)
-                            .setKeepAlive(keepAlive)
-                            .setMasterName(configuration.get(REDIS_CACHE_MASTER_NAME))
-                            .addSentinelAddress(formatUrls(configuration.get(REDIS_CACHE_SENTINEL_URLS).split(COMMA)))
-                            .setUsername(configuration.get(REDIS_CACHE_USERNAME))
-                            .setPassword(configuration.get(REDIS_CACHE_PASSWORD));
-                        break;
-                    case STANDALONE:
-                        config.setLockWatchdogTimeout(watchdogTimeoutInMS)
-                            .useSingleServer()
-                            .setClientName(JANUSGRAPH_REDIS)
-                            .setAddress(formatUrls(configuration.get(REDIS_CACHE_SERVER_URL).split(COMMA))[0])
-                            .setConnectTimeout(connectTimeout)
-                            .setKeepAlive(keepAlive)
-                            .setUsername(configuration.get(REDIS_CACHE_USERNAME))
-                            .setPassword(configuration.get(REDIS_CACHE_PASSWORD));
-                        break;
-                    default:
-                        throw new JanusGraphConfigurationException("Invalid redis server mode");
-                }
-                client = Redisson.create(config);
-            }
+        redisServerMode = configuration.get(REDIS_CACHE_SERVER_MODE);
+        connectTimeout = configuration.get(REDIS_CACHE_CONNECTION_TIME_OUT);
+        keepAlive = configuration.get(REDIS_CACHE_KEEP_ALIVE);
+        watchdogTimeoutInMS = configuration.get(REDIS_CACHE_LOCK_WATCHDOG_TIMEOUT_MS);
+        log.info("Creating connection for redis:{}", redisServerMode);
+        Config config = new Config();
+        switch (redisServerMode) {
+            case SENTINEL:
+                config.setLockWatchdogTimeout(watchdogTimeoutInMS)
+                    .useSentinelServers()
+                    .setClientName(JANUSGRAPH_REDIS)
+                    .setReadMode(ReadMode.MASTER_SLAVE)
+                    .setCheckSentinelsList(false)
+                    .setConnectTimeout(connectTimeout)
+                    .setKeepAlive(keepAlive)
+                    .setMasterName(configuration.get(REDIS_CACHE_MASTER_NAME))
+                    .addSentinelAddress(formatUrls(configuration.get(REDIS_CACHE_SENTINEL_URLS).split(COMMA)))
+                    .setUsername(configuration.get(REDIS_CACHE_USERNAME))
+                    .setPassword(configuration.get(REDIS_CACHE_PASSWORD));
+                break;
+            case STANDALONE:
+                config.setLockWatchdogTimeout(watchdogTimeoutInMS)
+                    .useSingleServer()
+                    .setClientName(JANUSGRAPH_REDIS)
+                    .setAddress(formatUrls(configuration.get(REDIS_CACHE_SERVER_URL).split(COMMA))[0])
+                    .setConnectTimeout(connectTimeout)
+                    .setKeepAlive(keepAlive)
+                    .setUsername(configuration.get(REDIS_CACHE_USERNAME))
+                    .setPassword(configuration.get(REDIS_CACHE_PASSWORD));
+                break;
+            default:
+                throw new JanusGraphConfigurationException("Invalid redis server mode");
         }
-
-        return client;
+        return Redisson.create(config);
     }
 
     private static String[] formatUrls(String[] urls) throws IllegalArgumentException {

@@ -129,7 +129,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
                     redisCache.fastPutAsync(query, fastConf.asByteArray(entries));
                     RLock lock = redisIndexKeys.getLock(query.getKey());
                     try {
-                        lock.tryLock(1, 2, TimeUnit.SECONDS);
+                        lock.tryLock(3, 10, TimeUnit.SECONDS);
                         ArrayList<KeySliceQuery> queryList = redisIndexKeys.get(query.getKey());
                         if (queryList == null)
                             queryList = new ArrayList<>();
@@ -182,7 +182,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
                         redisCache.fastPutAsync(ksqs[i], fastConf.asByteArray(subresult));
                         RLock lock = redisIndexKeys.getLock(ksqs[i].getKey());
                         try {
-                            lock.tryLock(1, 2, TimeUnit.SECONDS);
+                            lock.tryLock(3, 10, TimeUnit.SECONDS);
                             ArrayList<KeySliceQuery> queryList = redisIndexKeys.get(ksqs[i].getKey());
                             if (queryList == null)
                                 queryList = new ArrayList<>();
