@@ -14,6 +14,7 @@
 
 package org.janusgraph.diskstorage.keycolumnvalue.cache;
 
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.CACHE_KEYSPACE_PREFIX;
 
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheLoader;
@@ -47,7 +48,6 @@ import java.util.logging.Logger;
 import static org.janusgraph.util.datastructures.ByteSize.OBJECT_HEADER;
 import static org.janusgraph.util.datastructures.ByteSize.OBJECT_REFERENCE;
 import static org.janusgraph.util.datastructures.ByteSize.STATICARRAYBUFFER_RAW_SIZE;
-
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
  */
@@ -59,8 +59,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
 
     private static final int INVALIDATE_KEY_FRACTION_PENALTY = 1000;
     private static final int PENALTY_THRESHOLD = 5;
-    public static final String REDIS_CACHE_PREFIX = "redis-cache-";
-    public static final String REDIS_INDEX_CACHE_PREFIX = "redis-index-cache-";
+    public static final String REDIS_INDEX_CACHE_PREFIX = "-index-";
 
     private volatile CountDownLatch penaltyCountdown;
 
@@ -86,8 +85,8 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
         this.invalidationGracePeriodMS = invalidationGracePeriodMS;
 
         redissonClient = RedissonCache.getRedissonClient(configuration);
-        redisCache = redissonClient.getLocalCachedMap(REDIS_CACHE_PREFIX + metricsName, LocalCachedMapOptions.defaults());
-        redisIndexKeys = redissonClient.getLocalCachedMap(REDIS_INDEX_CACHE_PREFIX + metricsName, LocalCachedMapOptions.defaults());
+        redisCache = redissonClient.getLocalCachedMap(String.join("-",configuration.get(CACHE_KEYSPACE_PREFIX), metricsName), LocalCachedMapOptions.defaults());
+        redisIndexKeys = redissonClient.getLocalCachedMap(String.join("-", configuration.get(CACHE_KEYSPACE_PREFIX) , REDIS_INDEX_CACHE_PREFIX , metricsName), LocalCachedMapOptions.defaults());
         expiredKeys = new ConcurrentHashMap<>(50, 0.75f, concurrencyLevel);
         penaltyCountdown = new CountDownLatch(PENALTY_THRESHOLD);
 

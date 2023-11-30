@@ -359,6 +359,10 @@ public class GraphDatabaseConfiguration {
         "Enable or disable Redis cache (redis/inmemory)",
         ConfigOption.Type.MASKABLE, "inmemory");
 
+    public static final ConfigOption<String> CACHE_KEYSPACE_PREFIX = new ConfigOption<>(CACHE_NS,"cache-keyspace-prefix",
+        "Set prefix for keyspace created in redis.",
+        ConfigOption.Type.MASKABLE, "janusgraph");
+
     public static final ConfigOption<String> REDIS_CACHE_SENTINEL_URLS = new ConfigOption<>(CACHE_NS,"redis-cache-sentinel-urls",
         "csv values for multiple redis sentinel host:port urls.",
         ConfigOption.Type.MASKABLE, "localhost:26379");
