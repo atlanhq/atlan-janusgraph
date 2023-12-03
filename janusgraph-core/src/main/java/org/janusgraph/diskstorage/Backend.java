@@ -44,7 +44,7 @@ import org.janusgraph.diskstorage.keycolumnvalue.StoreManager;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.CacheTransaction;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.ExpirationKCVSCache;
-import org.janusgraph.diskstorage.keycolumnvalue.cache.ExpirationKCVSRCache;
+import org.janusgraph.diskstorage.keycolumnvalue.cache.ExpirationKCVSRedisCache;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.KCVSCache;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.NoKCVSCache;
 import org.janusgraph.diskstorage.keycolumnvalue.keyvalue.OrderedKeyValueStoreManager;
@@ -350,10 +350,10 @@ public class Backend implements LockerProvider, AutoCloseable {
 
                 if(REDIS_TAG.equals(cacheType)){
                     log.info("======== Configuring redis cache ========");
-                    edgeStore = new ExpirationKCVSRCache(edgeStoreRaw,getMetricsCacheName(EDGESTORE_NAME)!=null?getMetricsCacheName(EDGESTORE_NAME)
+                    edgeStore = new ExpirationKCVSRedisCache(edgeStoreRaw,getMetricsCacheName(EDGESTORE_NAME)!=null?getMetricsCacheName(EDGESTORE_NAME)
                         :"edgeStore",expirationTime,cleanWaitTime,
                         edgeStoreCacheSize, configuration);
-                    indexStore = new ExpirationKCVSRCache(indexStoreRaw,getMetricsCacheName(INDEXSTORE_NAME)!=null?
+                    indexStore = new ExpirationKCVSRedisCache(indexStoreRaw,getMetricsCacheName(INDEXSTORE_NAME)!=null?
                         getMetricsCacheName(INDEXSTORE_NAME):"indexStore",expirationTime,cleanWaitTime,
                         indexStoreCacheSize, configuration);
                 }else{
