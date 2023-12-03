@@ -44,7 +44,7 @@ import org.janusgraph.diskstorage.keycolumnvalue.StoreManager;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.CacheTransaction;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.ExpirationKCVSCache;
-import org.janusgraph.diskstorage.keycolumnvalue.cache.ExpirationKCVSRedisCache;
+import org.janusgraph.diskstorage.keycolumnvalue.cache.ExpirationKCVSRCache;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.KCVSCache;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.NoKCVSCache;
 import org.janusgraph.diskstorage.keycolumnvalue.keyvalue.OrderedKeyValueStoreManager;
@@ -89,7 +89,6 @@ import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.CA
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DB_CACHE;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DB_CACHE_CLEAN_WAIT;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DB_CACHE_SIZE;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DB_CACHE_TIME;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.IDS_STORE_NAME;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_BACKEND;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_NS;
@@ -107,6 +106,7 @@ import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.PA
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.PARALLEL_BACKEND_EXECUTOR_SERVICE_MAX_POOL_SIZE;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.PARALLEL_BACKEND_EXECUTOR_SERVICE_MAX_SHUTDOWN_WAIT_TIME;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.PARALLEL_BACKEND_OPS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.REDIS_CACHE_EXPIRY_MS;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_BACKEND;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_BATCH;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_DIRECTORY;
@@ -326,7 +326,7 @@ public class Backend implements LockerProvider, AutoCloseable {
 
             //Configure caches
             if (cacheEnabled) {
-                long expirationTime = configuration.get(DB_CACHE_TIME);
+                long expirationTime = configuration.get(REDIS_CACHE_EXPIRY_MS);
                 Preconditions.checkArgument(expirationTime>=0,"Invalid cache expiration time: %s",expirationTime);
                 if (expirationTime==0) expirationTime=ETERNAL_CACHE_EXPIRATION;
 
@@ -350,10 +350,10 @@ public class Backend implements LockerProvider, AutoCloseable {
 
                 if(REDIS_TAG.equals(cacheType)){
                     log.info("======== Configuring redis cache ========");
-                    edgeStore = new ExpirationKCVSRedisCache(edgeStoreRaw,getMetricsCacheName(EDGESTORE_NAME)!=null?getMetricsCacheName(EDGESTORE_NAME)
+                    edgeStore = new ExpirationKCVSRCache(edgeStoreRaw,getMetricsCacheName(EDGESTORE_NAME)!=null?getMetricsCacheName(EDGESTORE_NAME)
                         :"edgeStore",expirationTime,cleanWaitTime,
                         edgeStoreCacheSize, configuration);
-                    indexStore = new ExpirationKCVSRedisCache(indexStoreRaw,getMetricsCacheName(INDEXSTORE_NAME)!=null?
+                    indexStore = new ExpirationKCVSRCache(indexStoreRaw,getMetricsCacheName(INDEXSTORE_NAME)!=null?
                         getMetricsCacheName(INDEXSTORE_NAME):"indexStore",expirationTime,cleanWaitTime,
                         indexStoreCacheSize, configuration);
                 }else{

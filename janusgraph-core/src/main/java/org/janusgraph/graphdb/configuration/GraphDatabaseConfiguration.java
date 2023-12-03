@@ -363,6 +363,13 @@ public class GraphDatabaseConfiguration {
         "Set prefix for keyspace created in redis.",
         ConfigOption.Type.MASKABLE, "janusgraph");
 
+    public static final ConfigOption<Long> REDIS_CACHE_EXPIRY_MS = new ConfigOption<>(CACHE_NS,"db-cache-expiry-time",
+        "Default expiration time, in milliseconds, for entries in the database-level cache. " +
+            "Entries are evicted when they reach this age even if the cache has room to spare. " +
+            "Set to 0 to disable expiration (cache entries live forever or until memory pressure " +
+            "triggers eviction when set to 0).",
+        ConfigOption.Type.MASKABLE, 120000L);
+
     public static final ConfigOption<String> REDIS_CACHE_SENTINEL_URLS = new ConfigOption<>(CACHE_NS,"redis-cache-sentinel-urls",
         "csv values for multiple redis sentinel host:port urls.",
         ConfigOption.Type.MASKABLE, "localhost:26379");

@@ -14,8 +14,6 @@
 
 package org.janusgraph.diskstorage.keycolumnvalue.cache;
 
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.CACHE_KEYSPACE_PREFIX;
-
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheLoader;
 import org.janusgraph.core.JanusGraphException;
@@ -29,9 +27,8 @@ import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.util.CacheMetricsAction;
 import org.nustaq.serialization.FSTConfiguration;
-import org.redisson.api.LocalCachedMapOptions;
-import org.redisson.api.RLocalCachedMap;
 import org.redisson.api.RLock;
+import org.redisson.api.RMapCache;
 import org.redisson.api.RedissonClient;
 
 import java.util.ArrayList;
@@ -39,70 +36,46 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static org.janusgraph.util.datastructures.ByteSize.OBJECT_HEADER;
-import static org.janusgraph.util.datastructures.ByteSize.OBJECT_REFERENCE;
-import static org.janusgraph.util.datastructures.ByteSize.STATICARRAYBUFFER_RAW_SIZE;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.CACHE_KEYSPACE_PREFIX;
+import static org.janusgraph.util.datastructures.ByteSize.*;
+
 /**
- * @author Matthias Broecheler (me@matthiasb.com)
+ * @author naveenaechan
  */
-public class ExpirationKCVSRedisCache extends KCVSCache {
+public class ExpirationKCVSRCache extends KCVSCache {
 
     //Weight estimation
-    private static final int STATIC_ARRAY_BUFFER_SIZE = STATICARRAYBUFFER_RAW_SIZE + 10; // 10 = last number is average length
-    private static final int KEY_QUERY_SIZE = OBJECT_HEADER + 4 + 1 + 3 * (OBJECT_REFERENCE + STATIC_ARRAY_BUFFER_SIZE); // object_size + int + boolean + 3 static buffers
-
-    private static final int INVALIDATE_KEY_FRACTION_PENALTY = 1000;
-    private static final int PENALTY_THRESHOLD = 5;
     public static final String REDIS_INDEX_CACHE_PREFIX = "index";
 
-    private volatile CountDownLatch penaltyCountdown;
-
-    private final ConcurrentHashMap<StaticBuffer, Long> expiredKeys;
-
     private final long cacheTimeMS;
-    private final long invalidationGracePeriodMS;
-    private final CleanupThread cleanupThread;
     private RedissonClient redissonClient;
-    private RLocalCachedMap<KeySliceQuery, byte[]> redisCache;
-    private RLocalCachedMap<StaticBuffer, ArrayList<KeySliceQuery>> redisIndexKeys;
+    private RMapCache<KeySliceQuery, byte[]> redisCache;
+    private RMapCache<StaticBuffer, ArrayList<KeySliceQuery>> redisIndexKeys;
     private static Logger logger = Logger.getLogger("redis-logger");
     private static FSTConfiguration fastConf = FSTConfiguration.createDefaultConfiguration();
 
-    public ExpirationKCVSRedisCache(final KeyColumnValueStore store, String metricsName, final long cacheTimeMS,
-                                    final long invalidationGracePeriodMS, final long maximumByteSize, Configuration configuration) {
+    public ExpirationKCVSRCache(final KeyColumnValueStore store, String metricsName, final long cacheTimeMS,
+                                final long invalidationGracePeriodMS, final long maximumByteSize, Configuration configuration) {
         super(store, metricsName);
         Preconditions.checkArgument(cacheTimeMS > 0, "Cache expiration must be positive: %s", cacheTimeMS);
         Preconditions.checkArgument(System.currentTimeMillis() + 1000L * 3600 * 24 * 365 * 100 + cacheTimeMS > 0, "Cache expiration time too large, overflow may occur: %s", cacheTimeMS);
         this.cacheTimeMS = cacheTimeMS;
-        final int concurrencyLevel = Runtime.getRuntime().availableProcessors();
         Preconditions.checkArgument(invalidationGracePeriodMS >= 0, "Invalid expiration grace period: %s", invalidationGracePeriodMS);
-        this.invalidationGracePeriodMS = invalidationGracePeriodMS;
 
         redissonClient = RedissonCache.getRedissonClient(configuration);
-        redisCache = redissonClient.getLocalCachedMap(String.join("-",configuration.get(CACHE_KEYSPACE_PREFIX), metricsName), LocalCachedMapOptions.defaults());
-        redisIndexKeys = redissonClient.getLocalCachedMap(String.join("-", configuration.get(CACHE_KEYSPACE_PREFIX) , REDIS_INDEX_CACHE_PREFIX , metricsName), LocalCachedMapOptions.defaults());
-        expiredKeys = new ConcurrentHashMap<>(50, 0.75f, concurrencyLevel);
-        penaltyCountdown = new CountDownLatch(PENALTY_THRESHOLD);
+        redisCache = redissonClient.getMapCache(String.join("-", configuration.get(CACHE_KEYSPACE_PREFIX), metricsName));
+        redisIndexKeys = redissonClient.getMapCache(String.join("-", configuration.get(CACHE_KEYSPACE_PREFIX), REDIS_INDEX_CACHE_PREFIX, metricsName));
 
-        cleanupThread = new CleanupThread();
-        cleanupThread.start();
         logger.info("********************** Configurations are loaded **********************");
     }
 
     @Override
     public EntryList getSlice(final KeySliceQuery query, final StoreTransaction txh) throws BackendException {
         incActionBy(1, CacheMetricsAction.RETRIEVAL, txh);
-        if (isExpired(query)) {
-            incActionBy(1, CacheMetricsAction.MISS, txh);
-            return store.getSlice(query, unwrapTx(txh));
-        }
-
         try {
             return get(query, () -> {
                 incActionBy(1, CacheMetricsAction.MISS, txh);
@@ -125,15 +98,15 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
                 if (entries == null) {
                     throw new CacheLoader.InvalidCacheLoadException("valueLoader must not return null, key=" + query);
                 } else {
-                    redisCache.fastPutAsync(query, fastConf.asByteArray(entries));
+                    redisCache.fastPutAsync(query, fastConf.asByteArray(entries), this.cacheTimeMS,TimeUnit.MILLISECONDS);
                     RLock lock = redisIndexKeys.getLock(query.getKey());
                     try {
-                        lock.tryLock(3, 10, TimeUnit.SECONDS);
+                        lock.tryLock(1, 3, TimeUnit.SECONDS);
                         ArrayList<KeySliceQuery> queryList = redisIndexKeys.get(query.getKey());
                         if (queryList == null)
                             queryList = new ArrayList<>();
                         queryList.add(query);
-                        redisIndexKeys.fastPutAsync(query.getKey(), queryList);
+                        redisIndexKeys.fastPutAsync(query.getKey(), queryList, this.cacheTimeMS,TimeUnit.MILLISECONDS);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     } finally {
@@ -159,10 +132,8 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
             final StaticBuffer key = keys.get(i);
             ksqs[i] = new KeySliceQuery(key, query);
             EntryList result = null;
-            if (!isExpired(ksqs[i])) {
-                bytResult = redisCache.get(ksqs[i]);
-                result = bytResult != null ? (EntryList) fastConf.asObject(bytResult) : null;
-            } else ksqs[i] = null;
+            bytResult = redisCache.get(ksqs[i]);
+            result = bytResult != null ? (EntryList) fastConf.asObject(bytResult) : null;
             if (result != null) results.put(key, result);
             else remainingKeys.add(key);
         }
@@ -178,7 +149,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
                     results.put(key, subresult);
                     if (ksqs[i] != null) {
                         logger.info("adding to cache subresult " + subresult);
-                        redisCache.fastPutAsync(ksqs[i], fastConf.asByteArray(subresult));
+                        redisCache.fastPutAsync(ksqs[i], fastConf.asByteArray(subresult), this.cacheTimeMS, TimeUnit.MILLISECONDS);
                         RLock lock = redisIndexKeys.getLock(ksqs[i].getKey());
                         try {
                             lock.tryLock(3, 10, TimeUnit.SECONDS);
@@ -186,7 +157,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
                             if (queryList == null)
                                 queryList = new ArrayList<>();
                             queryList.add(ksqs[i]);
-                            redisIndexKeys.fastPut(ksqs[i].getKey(), queryList);
+                            redisIndexKeys.fastPutAsync(ksqs[i].getKey(), queryList, this.cacheTimeMS, TimeUnit.MILLISECONDS);
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         } finally {
@@ -202,8 +173,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
     @Override
     public void clearCache() {
         redisCache.clearExpire();
-        expiredKeys.clear();
-        penaltyCountdown = new CountDownLatch(PENALTY_THRESHOLD);
+        redisIndexKeys.clearExpire();
     }
 
     @Override
@@ -212,91 +182,14 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
         if (keySliceQueryList != null) {
             for (KeySliceQuery keySliceQuery : keySliceQueryList) {
                 if (key.equals(keySliceQuery.getKey())) {
-                    redisCache.fastRemove(keySliceQuery);
+                    redisCache.fastRemoveAsync(keySliceQuery);
                 }
             }
-
-            Preconditions.checkArgument(!hasValidateKeysOnly() || entries.isEmpty());
-            expiredKeys.put(key, getExpirationTime());
-            if (Math.random() < 1.0 / INVALIDATE_KEY_FRACTION_PENALTY) penaltyCountdown.countDown();
         }
     }
 
     @Override
     public void close() throws BackendException {
-        cleanupThread.stopThread();
         super.close();
     }
-
-    private boolean isExpired(final KeySliceQuery query) {
-        Long until = expiredKeys.get(query.getKey());
-        if (until == null) return false;
-        if (isBeyondExpirationTime(until)) {
-            expiredKeys.remove(query.getKey(), until);
-            return false;
-        }
-        //We suffer a cache miss, hence decrease the count down
-        penaltyCountdown.countDown();
-        return true;
-    }
-
-    private long getExpirationTime() {
-        return System.currentTimeMillis() + cacheTimeMS;
-    }
-
-    private boolean isBeyondExpirationTime(long until) {
-        return until < System.currentTimeMillis();
-    }
-
-    private long getAge(long until) {
-        long age = System.currentTimeMillis() - (until - cacheTimeMS);
-        assert age >= 0;
-        return age;
-    }
-
-    private class CleanupThread extends Thread {
-
-        private boolean stop = false;
-
-        public CleanupThread() {
-            this.setDaemon(true);
-            this.setName("ExpirationStoreCache-" + getId());
-        }
-
-        @Override
-        public void run() {
-            while (true) {
-                if (stop) return;
-                try {
-
-                    penaltyCountdown.await();
-                } catch (InterruptedException e) {
-                    if (stop) return;
-                    else throw new RuntimeException("Cleanup thread got interrupted", e);
-                }
-                //Do clean up work by invalidating all entries for expired keys
-                final Map<StaticBuffer, Long> expiredKeysCopy = new HashMap<>(expiredKeys.size());
-                for (Map.Entry<StaticBuffer, Long> expKey : expiredKeys.entrySet()) {
-                    if (isBeyondExpirationTime(expKey.getValue()))
-                        expiredKeys.remove(expKey.getKey(), expKey.getValue());
-                    else if (getAge(expKey.getValue()) >= invalidationGracePeriodMS)
-                        expiredKeysCopy.put(expKey.getKey(), expKey.getValue());
-                }
-                for (KeySliceQuery ksq : redisCache.keySet()) {
-                    if (expiredKeysCopy.containsKey(ksq.getKey())) redisCache.remove(ksq);
-                }
-                penaltyCountdown = new CountDownLatch(PENALTY_THRESHOLD);
-                for (Map.Entry<StaticBuffer, Long> expKey : expiredKeysCopy.entrySet()) {
-                    expiredKeys.remove(expKey.getKey(), expKey.getValue());
-                }
-            }
-        }
-
-        void stopThread() {
-            stop = true;
-            this.interrupt();
-        }
-    }
-
-
 }
