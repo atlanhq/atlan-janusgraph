@@ -27,6 +27,7 @@ import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.util.CacheMetricsAction;
 import org.nustaq.serialization.FSTConfiguration;
+import org.redisson.api.EvictionMode;
 import org.redisson.api.RLock;
 import org.redisson.api.RMapCache;
 import org.redisson.api.RedissonClient;
@@ -41,6 +42,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.CACHE_KEYSPACE_PREFIX;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.REDIS_MAX_CACHE_SIZE;
 
 /**
  * @author naveenaechan
@@ -56,7 +58,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
     private static FSTConfiguration fastConf = FSTConfiguration.createDefaultConfiguration();
 
     public ExpirationKCVSRedisCache(final KeyColumnValueStore store, String metricsName, final long cacheTimeMS,
-                                    final long invalidationGracePeriodMS, final long maximumByteSize, Configuration configuration) {
+                                    final long invalidationGracePeriodMS, Configuration configuration) {
         super(store, metricsName);
         Preconditions.checkArgument(cacheTimeMS > 0, "Cache expiration must be positive: %s", cacheTimeMS);
         Preconditions.checkArgument(System.currentTimeMillis() + 1000L * 3600 * 24 * 365 * 100 + cacheTimeMS > 0, "Cache expiration time too large, overflow may occur: %s", cacheTimeMS);
@@ -66,7 +68,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
         redissonClient = RedissonCache.getRedissonClient(configuration);
         redisCache = redissonClient.getMapCache(String.join("-", configuration.get(CACHE_KEYSPACE_PREFIX), metricsName));
         redisIndexKeys = redissonClient.getMapCache(String.join("-", configuration.get(CACHE_KEYSPACE_PREFIX), REDIS_INDEX_CACHE_PREFIX, metricsName));
-
+        redisCache.setMaxSize(configuration.get(REDIS_MAX_CACHE_SIZE), EvictionMode.LFU);
         logger.info("********************** Configurations are loaded **********************");
     }
 

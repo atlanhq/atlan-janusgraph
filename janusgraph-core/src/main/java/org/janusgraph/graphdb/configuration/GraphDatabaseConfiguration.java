@@ -406,6 +406,18 @@ public class GraphDatabaseConfiguration {
         "Enables TCP keepAlive for connection.",
         ConfigOption.Type.MASKABLE, true);
 
+    public static final ConfigOption<Integer> REDIS_DATABASE_ID = new ConfigOption<>(CACHE_NS,"redis-db-id",
+        "Redis database id, usually can be set between 0 - 15 range.",
+        ConfigOption.Type.MASKABLE, 1);
+
+    public static final ConfigOption<String> REDIS_CLIENT_NAME = new ConfigOption<>(CACHE_NS,"redis-client-name",
+        "Redis client name",
+        ConfigOption.Type.MASKABLE, "janusgraph");
+
+    public static final ConfigOption<Integer> REDIS_MAX_CACHE_SIZE = new ConfigOption<>(CACHE_NS,"redis-cache-size",
+        "Maximum cache (map) size in redis, set 0 to unbound, default value is 100. Keys are evicted based on LFU mode.",
+        ConfigOption.Type.MASKABLE, 100);
+
     /**
      * The size of the database level cache.
      * If this value is between 0.0 (strictly bigger) and 1.0 (strictly smaller), then it is interpreted as a

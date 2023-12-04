@@ -33,7 +33,6 @@ public class RedissonCache {
     private static final Logger log = LoggerFactory.getLogger(RedissonCache.class);
     private static final String REDIS_URL_PREFIX = "redis://";
     private static final String COMMA = ",";
-    private static final String JANUSGRAPH_REDIS = "janusgraph-redis";
     private static final String SENTINEL = "sentinel";
     private static final String STANDALONE = "single";
     private static String redisServerMode;
@@ -52,7 +51,8 @@ public class RedissonCache {
             case SENTINEL:
                 config.setLockWatchdogTimeout(watchdogTimeoutInMS)
                     .useSentinelServers()
-                    .setClientName(JANUSGRAPH_REDIS)
+                    .setDatabase(configuration.get(REDIS_DATABASE_ID))
+                    .setClientName(configuration.get(REDIS_CLIENT_NAME))
                     .setReadMode(ReadMode.MASTER_SLAVE)
                     .setCheckSentinelsList(false)
                     .setConnectTimeout(connectTimeout)
@@ -65,7 +65,7 @@ public class RedissonCache {
             case STANDALONE:
                 config.setLockWatchdogTimeout(watchdogTimeoutInMS)
                     .useSingleServer()
-                    .setClientName(JANUSGRAPH_REDIS)
+                    .setClientName(configuration.get(REDIS_CLIENT_NAME))
                     .setAddress(formatUrls(configuration.get(REDIS_CACHE_SERVER_URL).split(COMMA))[0])
                     .setConnectTimeout(connectTimeout)
                     .setKeepAlive(keepAlive)

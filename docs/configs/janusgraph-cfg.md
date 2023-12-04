@@ -33,7 +33,10 @@ Configuration options that modify JanusGraph's caching behavior
 | cache.redis-cache-sentinel-urls | csv values for multiple redis sentinel host:port urls. | String | localhost:26379 | MASKABLE |
 | cache.redis-cache-server-mode | Redis connection mode, either single or sentinel connection | String | single | MASKABLE |
 | cache.redis-cache-server-url | Redis server url. | String | localhost:6379 | MASKABLE |
+| cache.redis-cache-size | Maximum cache (map) size in redis, set 0 to unbound, default value is 100. Keys are evicted based on LFU mode. | Integer | 100 | MASKABLE |
 | cache.redis-cache-username | Username for Redis authentication. | String | default | MASKABLE |
+| cache.redis-client-name | Redis client name | String | janusgraph | MASKABLE |
+| cache.redis-db-id | Redis database id, usually can be set between 0 - 15 range. | Integer | 1 | MASKABLE |
 | cache.tx-cache-size | Maximum size of the transaction-level cache of recently-used vertices. | Integer | 20000 | MASKABLE |
 | cache.tx-dirty-size | Initial size of the transaction-level cache of uncommitted dirty vertices. This is a performance hint for write-heavy, performance-sensitive transactional workloads. If set, it should roughly match the median vertices modified per transaction. | Integer | (no default value) | MASKABLE |
 

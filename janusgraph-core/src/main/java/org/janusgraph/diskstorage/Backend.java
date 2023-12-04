@@ -330,33 +330,32 @@ public class Backend implements LockerProvider, AutoCloseable {
                 Preconditions.checkArgument(expirationTime>=0,"Invalid cache expiration time: %s",expirationTime);
                 if (expirationTime==0) expirationTime=ETERNAL_CACHE_EXPIRATION;
 
-                long cacheSizeBytes;
-                double cacheSize = configuration.get(DB_CACHE_SIZE);
-                Preconditions.checkArgument(cacheSize>0.0,"Invalid cache size specified: %s",cacheSize);
-                if (cacheSize<1.0) {
-                    //Its a percentage
-                    Runtime runtime = Runtime.getRuntime();
-                    cacheSizeBytes = (long)((runtime.maxMemory()-(runtime.totalMemory()-runtime.freeMemory())) * cacheSize);
-                } else {
-                    Preconditions.checkArgument(cacheSize>1000,"Cache size is too small: %s",cacheSize);
-                    cacheSizeBytes = (long)cacheSize;
-                }
-                log.info("Configuring total store cache size: {}",cacheSizeBytes);
+
                 long cleanWaitTime = configuration.get(DB_CACHE_CLEAN_WAIT);
-                Preconditions.checkArgument(EDGESTORE_CACHE_PERCENT + INDEXSTORE_CACHE_PERCENT == 1.0,"Cache percentages don't add up!");
-                long edgeStoreCacheSize = Math.round(cacheSizeBytes * EDGESTORE_CACHE_PERCENT);
-                long indexStoreCacheSize = Math.round(cacheSizeBytes * INDEXSTORE_CACHE_PERCENT);
                 String cacheType = configuration.get(CACHE_TYPE);
 
                 if(REDIS_TAG.equals(cacheType)){
                     log.info("======== Configuring redis cache ========");
                     edgeStore = new ExpirationKCVSRedisCache(edgeStoreRaw,getMetricsCacheName(EDGESTORE_NAME)!=null?getMetricsCacheName(EDGESTORE_NAME)
-                        :"edgeStore",expirationTime,cleanWaitTime,
-                        edgeStoreCacheSize, configuration);
+                        :"edgeStore",expirationTime,cleanWaitTime, configuration);
                     indexStore = new ExpirationKCVSRedisCache(indexStoreRaw,getMetricsCacheName(INDEXSTORE_NAME)!=null?
-                        getMetricsCacheName(INDEXSTORE_NAME):"indexStore",expirationTime,cleanWaitTime,
-                        indexStoreCacheSize, configuration);
+                        getMetricsCacheName(INDEXSTORE_NAME):"indexStore",expirationTime,cleanWaitTime, configuration);
                 }else{
+                    long cacheSizeBytes;
+                    double cacheSize = configuration.get(DB_CACHE_SIZE);
+                    Preconditions.checkArgument(cacheSize>0.0,"Invalid cache size specified: %s",cacheSize);
+                    if (cacheSize<1.0) {
+                        //Its a percentage
+                        Runtime runtime = Runtime.getRuntime();
+                        cacheSizeBytes = (long)((runtime.maxMemory()-(runtime.totalMemory()-runtime.freeMemory())) * cacheSize);
+                    } else {
+                        Preconditions.checkArgument(cacheSize>1000,"Cache size is too small: %s",cacheSize);
+                        cacheSizeBytes = (long)cacheSize;
+                    }
+                    Preconditions.checkArgument(EDGESTORE_CACHE_PERCENT + INDEXSTORE_CACHE_PERCENT == 1.0,"Cache percentages don't add up!");
+                    long edgeStoreCacheSize = Math.round(cacheSizeBytes * EDGESTORE_CACHE_PERCENT);
+                    long indexStoreCacheSize = Math.round(cacheSizeBytes * INDEXSTORE_CACHE_PERCENT);
+                    log.info("Configuring total store cache size: {}",cacheSizeBytes);
                     log.info("======== Configuring inmemory cache ========");
                     edgeStore = new ExpirationKCVSCache(edgeStoreRaw,getMetricsCacheName(EDGESTORE_NAME),expirationTime,cleanWaitTime,edgeStoreCacheSize);
                     indexStore = new ExpirationKCVSCache(indexStoreRaw,getMetricsCacheName(INDEXSTORE_NAME),expirationTime,cleanWaitTime,indexStoreCacheSize);
