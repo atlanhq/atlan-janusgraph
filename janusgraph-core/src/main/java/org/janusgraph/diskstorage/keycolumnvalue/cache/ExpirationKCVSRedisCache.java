@@ -69,6 +69,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
         redisCache = redissonClient.getMapCache(String.join("-", configuration.get(CACHE_KEYSPACE_PREFIX), metricsName));
         redisIndexKeys = redissonClient.getMapCache(String.join("-", configuration.get(CACHE_KEYSPACE_PREFIX), REDIS_INDEX_CACHE_PREFIX, metricsName));
         redisCache.setMaxSize(configuration.get(REDIS_MAX_CACHE_SIZE), EvictionMode.LFU);
+        redisIndexKeys.setMaxSize(configuration.get(REDIS_MAX_CACHE_SIZE), EvictionMode.LFU);
         logger.info("********************** Configurations are loaded **********************");
     }
 
@@ -87,7 +88,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
         }
     }
 
-    private EntryList get(KeySliceQuery query, Callable<EntryList> valueLoader) {
+    private EntryList get(KeySliceQuery query, Callable<EntryList> valueLoader) throws Exception {
         byte[] bytQuery = redisCache.get(query);
         EntryList entries = bytQuery != null ? (EntryList) fastConf.asObject(bytQuery) : null;
         if (entries == null) {
@@ -97,7 +98,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
                 if (entries == null) {
                     throw new CacheLoader.InvalidCacheLoadException("valueLoader must not return null, key=" + query);
                 } else {
-                    redisCache.fastPutAsync(query, fastConf.asByteArray(entries), this.cacheTimeMS,TimeUnit.MILLISECONDS);
+                    redisCache.fastPutAsync(query, fastConf.asByteArray(entries), this.cacheTimeMS, TimeUnit.MILLISECONDS);
                     RLock lock = redisIndexKeys.getLock(query.getKey());
                     try {
                         lock.tryLock(1, 3, TimeUnit.SECONDS);
@@ -105,15 +106,17 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
                         if (queryList == null)
                             queryList = new ArrayList<>();
                         queryList.add(query);
-                        redisIndexKeys.fastPutAsync(query.getKey(), queryList, this.cacheTimeMS,TimeUnit.MILLISECONDS);
+                        redisIndexKeys.fastPutAsync(query.getKey(), queryList, this.cacheTimeMS, TimeUnit.MILLISECONDS);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
+                        throw e;
                     } finally {
                         lock.unlock();
                     }
                 }
             } catch (Exception e) {
                 e.printStackTrace();
+                throw e;
             }
         }
         return entries;

@@ -39,6 +39,7 @@ public abstract class KCVSCache extends KCVSProxy {
 
     private final String metricsName;
 
+    protected String getMetricsName(){return this.metricsName;}
     protected KCVSCache(KeyColumnValueStore store, String metricsName) {
         super(store);
         this.metricsName = metricsName;

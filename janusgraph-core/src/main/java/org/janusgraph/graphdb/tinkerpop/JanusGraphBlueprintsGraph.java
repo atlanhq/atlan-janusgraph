@@ -70,6 +70,8 @@ public abstract class JanusGraphBlueprintsGraph implements JanusGraph {
 
     private ThreadLocal<JanusGraphBlueprintsTransaction> txs = ThreadLocal.withInitial(() -> null);
 
+    private final ThreadLocal<Boolean> cacheEnabled = ThreadLocal.withInitial(()-> true);
+
     public abstract JanusGraphTransaction newThreadBoundTransaction();
 
     private JanusGraphBlueprintsTransaction getAutoStartTx() {
@@ -94,6 +96,13 @@ public abstract class JanusGraphBlueprintsGraph implements JanusGraph {
         return getAutoStartTx();
     }
 
+    public void setEnableCache(boolean enableCache) {
+        this.cacheEnabled.set(enableCache);
+    }
+
+    public boolean isCacheEnabled() {
+        return this.cacheEnabled.get();
+    }
 
     @Override
     public synchronized void close() {
