@@ -1202,6 +1202,9 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
     }
 
     public void executeMultiQuery(final Collection<InternalVertex> vertices, final SliceQuery sq, final QueryProfiler profiler) {
+        if(!getGraph().isCacheEnabled()) {
+            txHandle.disableCache();
+        }
         LongArrayList vertexIds = new LongArrayList(vertices.size());
         for (InternalVertex v : vertices) {
             if (!v.isNew() && v.hasId() && (v instanceof CacheVertex) && !v.hasLoadedRelations(sq)) vertexIds.add(v.longId());
@@ -1409,6 +1412,9 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
         @Override
         public Iterator<JanusGraphElement> execute(final GraphCentricQuery query, final JointIndexQuery indexQuery, final Object exeInfo, final QueryProfiler profiler) {
             Iterator<JanusGraphElement> iterator;
+            if(!getGraph().isCacheEnabled()) {
+                txHandle.disableCache();
+            }
             if (!indexQuery.isEmpty()) {
                 final List<QueryUtil.IndexCall<Object>> retrievals = new ArrayList<>();
                 // Leave first index for streaming, and prepare the rest for intersecting and lookup

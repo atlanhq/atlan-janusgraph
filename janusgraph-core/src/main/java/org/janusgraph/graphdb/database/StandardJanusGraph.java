@@ -83,11 +83,11 @@ import org.janusgraph.graphdb.tinkerpop.JanusGraphBlueprintsGraph;
 import org.janusgraph.graphdb.tinkerpop.JanusGraphFeatures;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.AdjacentVertexFilterOptimizerStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.AdjacentVertexHasIdOptimizerStrategy;
-import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphMixedIndexCountStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.AdjacentVertexHasUniquePropertyOptimizerStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.AdjacentVertexIsOptimizerStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphIoRegistrationStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphLocalQueryOptimizerStrategy;
+import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphMixedIndexCountStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphMultiQueryStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphStepStrategy;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
@@ -485,11 +485,17 @@ public class StandardJanusGraph extends JanusGraphBlueprintsGraph {
 
     public EntryList edgeQuery(long vid, SliceQuery query, BackendTransaction tx) {
         Preconditions.checkArgument(vid > 0);
+        if (!this.isCacheEnabled()) {
+            tx.disableCache();
+        }
         return tx.edgeStoreQuery(new KeySliceQuery(idManager.getKey(vid), query));
     }
 
     public List<EntryList> edgeMultiQuery(LongArrayList vertexIdsAsLongs, SliceQuery query, BackendTransaction tx) {
         Preconditions.checkArgument(vertexIdsAsLongs != null && !vertexIdsAsLongs.isEmpty());
+        if (!this.isCacheEnabled()) {
+            tx.disableCache();
+        }
         final List<StaticBuffer> vertexIds = new ArrayList<>(vertexIdsAsLongs.size());
         for (int i = 0; i < vertexIdsAsLongs.size(); i++) {
             Preconditions.checkArgument(vertexIdsAsLongs.get(i) > 0);

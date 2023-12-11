@@ -393,12 +393,14 @@ public class StandardTransactionLogProcessor implements TransactionRecovery {
 
         @Override
         protected void action() {
+            graph.setEnableCache(false);
             lastInvocation = times.getTime();
             txCache.cleanUp();
         }
 
         @Override
         protected void cleanup() {
+            graph.setEnableCache(false);
             txCache.cleanUp();
         }
     }
