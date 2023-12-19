@@ -418,6 +418,17 @@ public class GraphDatabaseConfiguration {
         "Maximum cache (map) size in redis, set 0 to unbound, default value is 100. Keys are evicted based on LFU mode.",
         ConfigOption.Type.MASKABLE, 100);
 
+    public static final ConfigOption<Integer> REDIS_CACHE_LOCK_WAIT_MS = new ConfigOption<>(CACHE_NS,"redis-cache-lock-wait-ms",
+        "The maximum time (in millisec) to aquire the lock.",
+        ConfigOption.Type.MASKABLE, 1000);
+
+
+    public static final ConfigOption<Integer> REDIS_CACHE_LOCK_LEASE_MS = new ConfigOption<>(CACHE_NS,"redis-cache-lease-ms",
+        "If the lock is not available then the current thread becomes disabled for thread scheduling purposes " +
+            "and lies dormant until the lock has been acquired. If the lock is acquired, it is held until unlock is invoked, " +
+            "or until leaseTime milliseconds have passed since the lock was granted - whichever comes first",
+        ConfigOption.Type.MASKABLE, 2000);
+
     /**
      * The size of the database level cache.
      * If this value is between 0.0 (strictly bigger) and 1.0 (strictly smaller), then it is interpreted as a
