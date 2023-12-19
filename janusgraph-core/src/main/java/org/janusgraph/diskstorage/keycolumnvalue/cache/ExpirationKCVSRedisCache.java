@@ -42,6 +42,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.CACHE_KEYSPACE_PREFIX;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.REDIS_CACHE_LOCK_LEASE_MS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.REDIS_CACHE_LOCK_WAIT_MS;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.REDIS_MAX_CACHE_SIZE;
 
 /**
@@ -56,10 +58,12 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
     private RMapCache<StaticBuffer, ArrayList<KeySliceQuery>> redisIndexKeys;
     private static Logger logger = Logger.getLogger("janusgraph-redis-logger");
     private static FSTConfiguration fastConf = FSTConfiguration.createDefaultConfiguration();
+    private Configuration configuration;
 
     public ExpirationKCVSRedisCache(final KeyColumnValueStore store, String metricsName, final long cacheTimeMS,
                                     final long invalidationGracePeriodMS, Configuration configuration) {
         super(store, metricsName);
+        this.configuration = configuration;
         Preconditions.checkArgument(cacheTimeMS > 0, "Cache expiration must be positive: %s", cacheTimeMS);
         Preconditions.checkArgument(System.currentTimeMillis() + 1000L * 3600 * 24 * 365 * 100 + cacheTimeMS > 0, "Cache expiration time too large, overflow may occur: %s", cacheTimeMS);
         this.cacheTimeMS = cacheTimeMS;
@@ -101,7 +105,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
                     redisCache.fastPutAsync(query, fastConf.asByteArray(entries), this.cacheTimeMS, TimeUnit.MILLISECONDS);
                     RLock lock = redisIndexKeys.getLock(query.getKey());
                     try {
-                        lock.tryLock(1, 3, TimeUnit.SECONDS);
+                        lock.tryLock(this.configuration.get(REDIS_CACHE_LOCK_WAIT_MS), this.configuration.get(REDIS_CACHE_LOCK_LEASE_MS), TimeUnit.MILLISECONDS);
                         ArrayList<KeySliceQuery> queryList = redisIndexKeys.get(query.getKey());
                         if (queryList == null)
                             queryList = new ArrayList<>();
@@ -154,7 +158,7 @@ public class ExpirationKCVSRedisCache extends KCVSCache {
                         redisCache.fastPutAsync(ksqs[i], fastConf.asByteArray(subresult), this.cacheTimeMS, TimeUnit.MILLISECONDS);
                         RLock lock = redisIndexKeys.getLock(ksqs[i].getKey());
                         try {
-                            lock.tryLock(3, 10, TimeUnit.SECONDS);
+                            lock.tryLock(this.configuration.get(REDIS_CACHE_LOCK_WAIT_MS), this.configuration.get(REDIS_CACHE_LOCK_LEASE_MS), TimeUnit.MILLISECONDS);
                             ArrayList<KeySliceQuery> queryList = redisIndexKeys.get(ksqs[i].getKey());
                             if (queryList == null)
                                 queryList = new ArrayList<>();
