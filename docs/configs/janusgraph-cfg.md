@@ -27,6 +27,8 @@ Configuration options that modify JanusGraph's caching behavior
 | cache.db-cache-time | Default expiration time, in milliseconds, for entries in the database-level cache. Entries are evicted when they reach this age even if the cache has room to spare. Set to 0 to disable expiration (cache entries live forever or until memory pressure triggers eviction when set to 0). | Long | 10000 | GLOBAL_OFFLINE |
 | cache.redis-cache-connectTimeout | Timeout during connecting to any Redis server. | Integer | 1000 | MASKABLE |
 | cache.redis-cache-keepAlive | Enables TCP keepAlive for connection. | Boolean | true | MASKABLE |
+| cache.redis-cache-lease-ms | If the lock is not available then the current thread becomes disabled for thread scheduling purposes and lies dormant until the lock has been acquired. If the lock is acquired, it is held until unlock is invoked, or until leaseTime milliseconds have passed since the lock was granted - whichever comes first | Integer | 2000 | MASKABLE |
+| cache.redis-cache-lock-wait-ms | The maximum time (in millisec) to aquire the lock. | Integer | 1000 | MASKABLE |
 | cache.redis-cache-lock-watchdog-ms | This prevents against infinity locked locks due to Redisson client crush or any other reason when lock can't be released in proper way. | Long | 600000 | MASKABLE |
 | cache.redis-cache-mastername | Master server name used by Redis Sentinel servers and master change monitoring task. | String | mymaster | MASKABLE |
 | cache.redis-cache-password | Password for Redis authentication. | String | password | MASKABLE |
