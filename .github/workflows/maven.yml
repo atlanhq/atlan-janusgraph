@@ -18,6 +18,7 @@ on:
   push:
     branches:
       - atlan-v0.6.0
+      - atlas-heap
 
 env:
   ES_JAVA_OPTS: "-Xms256m -Xmx512m"

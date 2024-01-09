@@ -99,6 +99,7 @@ import org.janusgraph.graphdb.types.system.BaseKey;
 import org.janusgraph.graphdb.types.system.BaseRelationType;
 import org.janusgraph.graphdb.types.vertices.JanusGraphSchemaVertex;
 import org.janusgraph.graphdb.util.ExceptionFactory;
+import org.janusgraph.util.stats.MetricManager;
 import org.janusgraph.util.system.IOUtils;
 import org.janusgraph.util.system.TXUtils;
 import org.slf4j.Logger;
@@ -408,6 +409,7 @@ public class StandardJanusGraph extends JanusGraphBlueprintsGraph {
 
     public void closeTransaction(StandardJanusGraphTx tx) {
         openTransactions.remove(tx);
+        MetricManager.INSTANCE.getCounter(tx.getConfiguration().getGroupName(), "tx", "close").inc();
     }
 
     // ################### READ #########################
