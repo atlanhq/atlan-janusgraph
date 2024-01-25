@@ -370,6 +370,11 @@ public class GraphDatabaseConfiguration {
             "triggers eviction when set to 0).",
         ConfigOption.Type.MASKABLE, 120000L);
 
+    public static final ConfigOption<Integer> MAX_CACHE_FAIL_OPEN_COUNT = new ConfigOption<>(CACHE_NS,"cache-max-fail-open-count",
+        "Max queries to by-pass redis during redis fail over. If its set to 1000, after 1000 backend queries an attempt is made to" +
+            "query redis again. This is to avoid waiting for every query during redis cluster failure.",
+        ConfigOption.Type.MASKABLE, 1000);
+
     public static final ConfigOption<String> REDIS_CACHE_SENTINEL_URLS = new ConfigOption<>(CACHE_NS,"redis-cache-sentinel-urls",
         "csv values for multiple redis sentinel host:port urls.",
         ConfigOption.Type.MASKABLE, "localhost:26379");

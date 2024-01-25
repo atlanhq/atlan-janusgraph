@@ -19,6 +19,7 @@ Configuration options that modify JanusGraph's caching behavior
 | Name | Description | Datatype | Default Value | Mutability |
 | ---- | ---- | ---- | ---- | ---- |
 | cache.cache-keyspace-prefix | Set prefix for keyspace created in redis. | String | janusgraph | MASKABLE |
+| cache.cache-max-fail-open-count | Max queries to by-pass redis during redis fail over. If its set to 1000, after 1000 backend queries an attempt is made toquery redis again. This is to avoid waiting for every query during redis cluster failure. | Integer | 1000 | MASKABLE |
 | cache.cache-type | Enable or disable Redis cache (redis/inmemory) | String | inmemory | MASKABLE |
 | cache.db-cache | Whether to enable JanusGraph's database-level cache, which is shared across all transactions. Enabling this option speeds up traversals by holding hot graph elements in memory, but also increases the likelihood of reading stale data.  Disabling it forces each transaction to independently fetch graph elements from storage before reading/writing them. | Boolean | false | MASKABLE |
 | cache.db-cache-clean-wait | How long, in milliseconds, database-level cache will keep entries after flushing them.  This option is only useful on distributed storage backends that are capable of acknowledging writes without necessarily making them immediately visible. | Integer | 50 | GLOBAL_OFFLINE |
