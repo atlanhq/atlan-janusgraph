@@ -72,6 +72,7 @@
         <htrace.version>4.1.5</htrace.version>
         <bigtable.version>1.24.0</bigtable.version>
         <!-- align with org.apache.spark:spark-core_2.12 -->
+        <spark.version>3.3.3</spark.version>
         <jackson2.version>2.16.0</jackson2.version>
         <lucene-solr.version>8.11.2</lucene-solr.version>
         <elasticsearch.version>8.10.4</elasticsearch.version>
@@ -509,6 +510,12 @@
     </build>
     <dependencyManagement>
         <dependencies>
+            <!-- Override TinkerPop’s transitive Spark 3.3.2 -->
+            <dependency>
+                <groupId>org.apache.spark</groupId>
+                <artifactId>spark-core_2.12</artifactId>
+                <version>${spark.version}</version>
+            </dependency>
             <!-- Tinkerpop 3.x -->
             <dependency>
                 <groupId>org.apache.tinkerpop</groupId>
