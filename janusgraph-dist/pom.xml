@@ -3,7 +3,7 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph</artifactId>
-        <version>1.0.1-SNAPSHOT</version>
+        <version>1.0.2-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <packaging>pom</packaging>
@@ -192,7 +192,7 @@
             <plugin>
                 <groupId>com.googlecode.maven-download-plugin</groupId>
                 <artifactId>download-maven-plugin</artifactId>
-                <version>1.7.1</version>
+                <version>1.9.0</version>
                 <executions>
                     <execution>
                         <id>get-elasticsearch</id>
@@ -212,6 +212,7 @@
                             <unpack>true</unpack>
                             <!-- https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.17.8-linux-x86_64.tar.gz.sha512 -->
                             <sha512>cd02b40e8b32e78f17bac12245326e10482214ab452b2e5d1745ddc7944e60a5b07c01c949c68625d78640bdd46806aeece4e8d620788133993055732d388443</sha512>
+                            <readTimeOut>1800000</readTimeOut>
                         </configuration>
                     </execution>
                     <execution>
@@ -226,6 +227,7 @@
                             <outputDirectory>${project.build.directory}/</outputDirectory>
                             <unpack>true</unpack>
                             <sha256>${cassandra-dist.version.sha256}</sha256>
+                            <readTimeOut>1800000</readTimeOut>
                         </configuration>
                     </execution>
                 </executions>
@@ -625,7 +627,7 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
-                        <version>3.1.0</version>
+                        <version>3.2.0</version>
                         <executions>
                             <execution>
                                 <id>docker-build</id>
