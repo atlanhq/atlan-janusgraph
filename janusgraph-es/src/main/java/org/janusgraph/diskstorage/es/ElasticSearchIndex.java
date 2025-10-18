@@ -41,6 +41,8 @@ import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.es.compat.AbstractESCompat;
 import org.janusgraph.diskstorage.es.compat.ESCompatUtils;
+import org.janusgraph.diskstorage.es.dlq.ElasticSearchDLQ;
+import org.janusgraph.diskstorage.es.dlq.KafkaElasticSearchDLQ;
 import org.janusgraph.diskstorage.es.mapping.IndexMapping;
 import org.janusgraph.diskstorage.es.rest.util.HttpAuthTypes;
 import org.janusgraph.diskstorage.es.script.ESScriptResponse;
@@ -99,6 +101,9 @@ import static org.janusgraph.diskstorage.es.ElasticSearchConstants.ES_GEO_COORDS
 import static org.janusgraph.diskstorage.es.ElasticSearchConstants.ES_LANG_KEY;
 import static org.janusgraph.diskstorage.es.ElasticSearchConstants.ES_SCRIPT_KEY;
 import static org.janusgraph.diskstorage.es.ElasticSearchConstants.ES_TYPE_KEY;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DLQ_ENABLED;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DLQ_KAFKA_BOOTSTRAP_SERVERS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DLQ_KAFKA_TOPIC;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.GRAPH_NAME;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_MAX_RESULT_SET_SIZE;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_NAME;
@@ -369,6 +374,9 @@ public class ElasticSearchIndex implements IndexProvider {
     private final String parameterizedDeletionScriptId;
     private final boolean supportsGeoShapePrefixTree;
     private final CircleProcessor bdbCircleProcessor;
+    
+    // Dead Letter Queue
+    private final ElasticSearchDLQ dlq;
 
     public ElasticSearchIndex(Configuration config) throws BackendException {
         indexName = determineIndexName(config);
@@ -397,6 +405,9 @@ public class ElasticSearchIndex implements IndexProvider {
         setupMaxOpenScrollContextsIfNeeded(config);
 
         setupStoredScripts();
+        
+        // Initialize Dead Letter Queue
+        this.dlq = initializeDLQ(config);
     }
 
     public static String determineIndexName(Configuration config) {
@@ -404,7 +415,260 @@ public class ElasticSearchIndex implements IndexProvider {
             ? config.get(GRAPH_NAME)
             : config.get(INDEX_NAME);
     }
-
+    
+    /**
+     * Load DLQ configuration from properties.
+     * Searches for DLQ properties in this order:
+     * 1. System property pointing to specific file: -Djanusgraph.dlq.config=/path/to/file
+     * 2. Any properties file in classpath containing dlq.* properties
+     * 3. File system: ./config/janusgraph-dlq.properties
+     * 4. File system: ./janusgraph-dlq.properties
+     * 
+     * @return Properties object with dlq.* keys if found, null otherwise
+     */
+    private java.util.Properties loadDLQProperties() {
+        java.util.Properties dlqProps = new java.util.Properties();
+        boolean foundAny = false;
+        
+        // 1. Check system property for specific file
+        String customConfigPath = System.getProperty("janusgraph.dlq.config");
+        if (customConfigPath != null && !customConfigPath.isEmpty()) {
+            java.util.Properties customProps = loadPropertiesFromFile(customConfigPath);
+            if (customProps != null) {
+                dlqProps.putAll(customProps);
+                foundAny = true;
+                log.info("📄 Loaded DLQ properties from custom location: {}", customConfigPath);
+            }
+        }
+        
+        // 2. Search all properties files in classpath for dlq.* properties
+        java.util.Properties classpathProps = loadDLQPropertiesFromClasspath();
+        if (classpathProps != null && !classpathProps.isEmpty()) {
+            dlqProps.putAll(classpathProps);
+            foundAny = true;
+        }
+        
+        // 3. Check file system locations
+        if (!foundAny) {
+            String[] fileLocations = {
+                "./config/janusgraph-dlq.properties",
+                "./janusgraph-dlq.properties",
+                "/etc/janusgraph/janusgraph-dlq.properties",
+                System.getProperty("user.home") + "/.janusgraph/janusgraph-dlq.properties"
+            };
+            
+            for (String location : fileLocations) {
+                java.util.Properties fileProps = loadPropertiesFromFile(location);
+                if (fileProps != null) {
+                    dlqProps.putAll(fileProps);
+                    foundAny = true;
+                    break; // Use first found
+                }
+            }
+        }
+        
+        if (foundAny) {
+            log.info("✅ Loaded {} DLQ properties total", dlqProps.size());
+            // Log properties (redact sensitive ones)
+            for (String key : dlqProps.stringPropertyNames()) {
+                String value = dlqProps.getProperty(key);
+                if (key.contains("password") || key.contains("secret") || key.contains("key")) {
+                    log.info("  {} = ***REDACTED***", key);
+                } else {
+                    log.info("  {} = {}", key, value);
+                }
+            }
+            return dlqProps;
+        }
+        
+        log.debug("No DLQ properties found in classpath or file system");
+        return null;
+    }
+    
+    /**
+     * Search classpath for any properties files containing dlq.* properties.
+     * This allows DLQ config to be in any properties file (e.g., application.properties, atlas.properties, etc.)
+     */
+    private java.util.Properties loadDLQPropertiesFromClasspath() {
+        java.util.Properties dlqProps = new java.util.Properties();
+        
+        try {
+            // Common property file names to check
+            String[] commonPropertyFiles = {
+                "/janusgraph-dlq.properties",
+                "/application.properties",
+                "/janusgraph.properties",
+                "/config/application.properties",
+                "/config/janusgraph.properties",
+                "/atlas-application.properties",
+                "/META-INF/janusgraph.properties"
+            };
+            
+            for (String resourcePath : commonPropertyFiles) {
+                try {
+                    java.io.InputStream input = getClass().getResourceAsStream(resourcePath);
+                    if (input != null) {
+                        java.util.Properties props = new java.util.Properties();
+                        props.load(input);
+                        input.close();
+                        
+                        // Extract only dlq.* properties
+                        int dlqCount = 0;
+                        for (String key : props.stringPropertyNames()) {
+                            if (key.startsWith("dlq.")) {
+                                dlqProps.setProperty(key, props.getProperty(key));
+                                dlqCount++;
+                            }
+                        }
+                        
+                        if (dlqCount > 0) {
+                            log.info("📄 Found {} DLQ properties in classpath: {}", dlqCount, resourcePath);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug("Could not load properties from classpath: {}", resourcePath);
+                }
+            }
+            
+        } catch (Exception e) {
+            log.debug("Error searching classpath for DLQ properties", e);
+        }
+        
+        return dlqProps.isEmpty() ? null : dlqProps;
+    }
+    
+    /**
+     * Load properties from a file path
+     */
+    private java.util.Properties loadPropertiesFromFile(String filePath) {
+        if (filePath == null || filePath.isEmpty()) {
+            return null;
+        }
+        
+        try {
+            java.io.File file = new java.io.File(filePath);
+            if (file.exists() && file.isFile()) {
+                java.util.Properties props = new java.util.Properties();
+                java.io.FileInputStream input = new java.io.FileInputStream(file);
+                props.load(input);
+                input.close();
+                log.info("📄 Loaded properties from file: {}", file.getAbsolutePath());
+                return props;
+            }
+        } catch (Exception e) {
+            log.debug("Could not load properties from file: {}", filePath, e);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Debug helper: Dump all configuration keys to help diagnose property loading issues
+     */
+    private void dumpConfigurationKeys(Configuration config) {
+        try {
+            log.info("--- BEGIN Configuration Dump (Elasticsearch namespace) ---");
+            
+            // Try to get all keys in the elasticsearch namespace
+            java.util.Set<String> allKeys = new java.util.HashSet<>();
+            
+            // Check for keys we know should exist
+            String[] knownKeys = {
+                "search.backend",
+                "search.hostname", 
+                "search.port",
+                "search.elasticsearch.interface",
+                "search.elasticsearch.health-request-timeout",
+                "search.elasticsearch.bulk-refresh",
+                "search.elasticsearch.dlq.enabled",
+                "search.elasticsearch.dlq.kafka-bootstrap-servers",
+                "search.elasticsearch.dlq.kafka-topic"
+            };
+            
+            for (String key : knownKeys) {
+                try {
+                    // Try to access via reflection or string parsing
+                    // This is a best-effort dump
+                    log.info("  Known key '{}': exists={}", key, "(check manually)");
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+            
+            // Try to get the underlying configuration if possible
+            log.info("  Config class: {}", config.getClass().getName());
+            log.info("  Looking for 'dlq' related keys...");
+            
+            // Check elasticsearch namespace
+            Configuration esConfig = config.restrictTo("elasticsearch");
+            log.info("  Elasticsearch namespace config: {}", esConfig != null ? esConfig.getClass().getName() : "null");
+            
+            log.info("--- END Configuration Dump ---");
+            
+        } catch (Exception e) {
+            log.warn("Failed to dump configuration keys", e);
+        }
+    }
+    
+    private ElasticSearchDLQ initializeDLQ(Configuration config) {
+        log.info("========================================");
+        log.info("Initializing Elasticsearch DLQ...");
+        log.info("========================================");
+        
+        // DEBUG: Dump all configuration keys to help diagnose Atlas property loading
+        dumpConfigurationKeys(config);
+        
+        // Try to load from properties file as fallback
+        java.util.Properties dlqProps = loadDLQProperties();
+        
+        // Log the full config path for debugging
+        log.info("Checking config key: {}", DLQ_ENABLED.toStringWithoutRoot());
+        
+        // First try to get from config
+        boolean dlqEnabled = config.get(DLQ_ENABLED);
+        
+        log.info("DLQ enabled: {}", dlqEnabled);
+        
+        if (!dlqEnabled) {
+            log.info("Elasticsearch DLQ is DISABLED");
+            log.info("To enable, set: index.dlq.enabled=true in your configuration");
+            log.info("========================================");
+            return null;
+        }
+        
+        try {
+            log.info("DLQ is ENABLED, loading Kafka configuration...");
+            
+            String bootstrapServers = config.get(DLQ_KAFKA_BOOTSTRAP_SERVERS);
+            String topic = config.get(DLQ_KAFKA_TOPIC);
+            
+            log.info("DLQ Configuration:");
+            log.info("  Bootstrap Servers: '{}'", bootstrapServers);
+            log.info("  Topic: '{}'", topic);
+            
+            if (bootstrapServers == null || bootstrapServers.isEmpty()) {
+                log.error("❌ DLQ is enabled but kafka-bootstrap-servers is not configured. DLQ will be disabled.");
+                log.error("Please set: index.dlq.kafka-bootstrap-servers=<your-kafka-servers>");
+                log.info("========================================");
+                return null;
+            }
+            
+            // Additional Kafka configuration can be passed as empty map for now
+            // Can be extended later if needed
+            Map<String, Object> kafkaConfig = new HashMap<>();
+            
+            ElasticSearchDLQ dlqInstance = new KafkaElasticSearchDLQ(bootstrapServers, topic, kafkaConfig);
+            log.info("✅ Successfully initialized Kafka DLQ!");
+            log.info("========================================");
+            return dlqInstance;
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to initialize DLQ. DLQ will be disabled.", e);
+            log.info("========================================");
+            return null;
+        }
+    }
+    
     private void checkClusterHealth(String healthCheck) throws BackendException {
         try {
             client.clusterHealthRequest(healthCheck);
@@ -514,9 +778,64 @@ public class ElasticSearchIndex implements IndexProvider {
     private BackendException convert(Exception esException) {
         if (esException instanceof InterruptedException) {
             return new TemporaryBackendException("Interrupted while waiting for response", esException);
-        } else {
-            return new PermanentBackendException("Unknown exception while executing index operation", esException);
         }
+        
+        // Check if this is a retryable exception by examining the exception chain
+        Throwable cause = esException;
+        while (cause != null) {
+            final String className = cause.getClass().getName();
+            final String message = cause.getMessage() != null ? cause.getMessage().toLowerCase() : "";
+            
+            // Network-related exceptions that should be retried
+            if (className.contains("ConnectException") ||
+                className.contains("SocketTimeoutException") ||
+                className.contains("NoHttpResponseException") ||
+                className.contains("ConnectionClosedException") ||
+                className.contains("SocketException")) {
+                return new TemporaryBackendException("Temporary network exception during ES operation: " + cause.getMessage(), esException);
+            }
+            
+            // HTTP status codes that indicate temporary failures
+            if (message.contains("503") || message.contains("service unavailable") ||
+                message.contains("429") || message.contains("too many requests") ||
+                message.contains("408") || message.contains("request timeout") ||
+                message.contains("502") || message.contains("bad gateway") ||
+                message.contains("504") || message.contains("gateway timeout")) {
+                return new TemporaryBackendException("Temporary ES server error: " + cause.getMessage(), esException);
+            }
+            
+            // Cluster/node availability issues
+            if (message.contains("no available connection") ||
+                message.contains("connection refused") ||
+                message.contains("connection reset") ||
+                message.contains("broken pipe") ||
+                message.contains("connection pool shut down") ||
+                message.contains("cluster block exception") ||
+                message.contains("node not connected")) {
+                return new TemporaryBackendException("ES cluster temporarily unavailable: " + cause.getMessage(), esException);
+            }
+            
+            cause = cause.getCause();
+        }
+        
+        // Validation errors, mapping errors, and other permanent failures
+        final String exMessage = esException.getMessage() != null ? esException.getMessage().toLowerCase() : "";
+        if (exMessage.contains("mapper_parsing_exception") ||
+            exMessage.contains("illegal_argument_exception") ||
+            exMessage.contains("parsing_exception") ||
+            exMessage.contains("version_conflict") ||
+            exMessage.contains("strict_dynamic_mapping_exception")) {
+            return new PermanentBackendException("Permanent ES error: " + esException.getMessage(), esException);
+        }
+        
+        // Default to TemporaryBackendException to allow retries for unknown IOException types
+        // Most IOExceptions in Elasticsearch context are transient network issues
+        if (esException instanceof IOException || esException instanceof UncheckedIOException) {
+            return new TemporaryBackendException("Temporary IO exception during ES operation, will retry: " + esException.getMessage(), esException);
+        }
+        
+        // For truly unknown exceptions, treat as permanent
+        return new PermanentBackendException("Unknown exception while executing ES operation: " + esException.getMessage(), esException);
     }
 
     private static String getDualMappingName(String key) {
@@ -809,8 +1128,10 @@ public class ElasticSearchIndex implements IndexProvider {
     public void mutate(Map<String, Map<String, IndexMutation>> mutations, KeyInformation.IndexRetriever information,
                        BaseTransaction tx) throws BackendException {
         final List<ElasticSearchMutation> requests = new ArrayList<>();
+        String currentStore = null; // Track which store failed for DLQ
         try {
             for (final Map.Entry<String, Map<String, IndexMutation>> stores : mutations.entrySet()) {
+                currentStore = stores.getKey();
                 final List<ElasticSearchMutation> requestByStore = new ArrayList<>();
                 final String storeName = stores.getKey();
                 final String indexStoreName = getIndexStoreName(storeName);
@@ -879,9 +1200,48 @@ public class ElasticSearchIndex implements IndexProvider {
             if (!requests.isEmpty()) {
                 client.bulkRequest(requests, null);
             }
+            
         } catch (final Exception e) {
             log.error("Failed to execute bulk Elasticsearch mutation", e);
             throw convert(e);
+        }
+    }
+    
+    /**
+     * Handles mutation failure after all retries have been exhausted.
+     * This is called by the transaction layer when BackendOperation.execute() fails.
+     * Writes the failed mutations to the configured Dead Letter Queue (DLQ) if enabled.
+     *
+     * @param mutations The mutations that failed after all retry attempts
+     * @param cause The exception that caused the final failure
+     */
+    @Override
+    public void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
+        log.info("handleMutationFailure called - DLQ status: dlq={}, isEnabled={}", 
+                 dlq != null ? "initialized" : "NULL", 
+                 dlq != null && dlq.isEnabled() ? "true" : "false/null");
+        
+        if (dlq == null) {
+            log.warn("❌ DLQ is NULL! Failed mutations will NOT be written to DLQ.");
+            log.warn("This means DLQ was not properly initialized during ElasticSearchIndex construction.");
+            log.warn("Check startup logs for DLQ initialization messages.");
+            log.warn("Ensure 'index.search.elasticsearch.dlq.enabled=true' is set in your JanusGraph configuration.");
+            return;
+        }
+        
+        if (!dlq.isEnabled()) {
+            log.warn("DLQ is initialized but not enabled. Failed mutations will not be written.");
+            return;
+        }
+        
+        try {
+            // Try to determine which store failed from the mutations
+            String storeName = mutations.isEmpty() ? "unknown" : mutations.keySet().iterator().next();
+            log.info("Writing failed mutations to DLQ for stores: {}", mutations.keySet());
+            dlq.writeToDLQ(indexName, mutations, storeName, cause);
+            log.info("✅ Successfully written failed mutations to DLQ for stores: {}", mutations.keySet());
+        } catch (Exception dlqEx) {
+            log.error("❌ Failed to write to DLQ after retry exhaustion", dlqEx);
         }
     }
 
@@ -1436,6 +1796,17 @@ public class ElasticSearchIndex implements IndexProvider {
             client.close();
         } catch (final IOException e) {
             throw new PermanentBackendException(e);
+        }
+        
+        // Close DLQ
+        if (dlq != null) {
+            try {
+                dlq.close();
+                log.info("Closed Elasticsearch DLQ");
+            } catch (final IOException e) {
+                log.error("Failed to close DLQ", e);
+                throw new PermanentBackendException("Failed to close DLQ", e);
+            }
         }
 
     }

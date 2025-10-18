@@ -1020,6 +1020,23 @@ public class GraphDatabaseConfiguration {
             ConfigOption.Type.GLOBAL, true);
 
 
+    // Dead Letter Queue Configuration
+
+    public static final ConfigOption<Boolean> DLQ_ENABLED =
+        new ConfigOption<>(STORAGE_NS, "dlq-enabled",
+            "Enable Dead Letter Queue for failed Elasticsearch mutations",
+            ConfigOption.Type.LOCAL, false);
+
+    public static final ConfigOption<String> DLQ_KAFKA_BOOTSTRAP_SERVERS =
+        new ConfigOption<>(STORAGE_NS, "dlq-kafka-bootstrap-servers",
+            "Kafka bootstrap servers for DLQ (e.g., localhost:9092)",
+            ConfigOption.Type.LOCAL, "");
+
+    public static final ConfigOption<String> DLQ_KAFKA_TOPIC =
+        new ConfigOption<>(STORAGE_NS, "dlq-kafka-topic",
+            "Kafka topic name for DLQ",
+            ConfigOption.Type.LOCAL, "ATLAS_ES_DLQ");
+
     // ############## Logging System ######################
     // ################################################
 

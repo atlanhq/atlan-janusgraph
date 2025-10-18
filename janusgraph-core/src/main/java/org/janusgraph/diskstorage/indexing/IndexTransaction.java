@@ -15,6 +15,7 @@
 package org.janusgraph.diskstorage.indexing;
 
 import com.google.common.base.Preconditions;
+import org.janusgraph.core.JanusGraphException;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.BaseTransaction;
 import org.janusgraph.diskstorage.BaseTransactionConfig;
@@ -23,6 +24,8 @@ import org.janusgraph.diskstorage.util.BackendOperation;
 import org.janusgraph.graphdb.database.idhandling.VariableLong;
 import org.janusgraph.graphdb.database.serialize.DataOutput;
 import org.janusgraph.graphdb.tinkerpop.optimize.step.Aggregation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -39,7 +42,8 @@ import java.util.stream.Stream;
  */
 
 public class IndexTransaction implements BaseTransaction, LoggableTransaction {
-
+    private static final Logger log =
+        LoggerFactory.getLogger(IndexTransaction.class);
     private static final int DEFAULT_OUTER_MAP_SIZE = 3;
     private static final int DEFAULT_INNER_MAP_SIZE = 5;
 
@@ -145,18 +149,33 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
                 for (IndexMutation mut : store.values()) mut.consolidate();
             }
 
-            BackendOperation.execute(new Callable<Boolean>() {
-                @Override
-                public Boolean call() throws Exception {
-                    index.mutate(mutations, keyInformation, indexTx);
-                    return true;
-                }
+            // Keep a reference to mutations for failure handling if retries fail
+            final Map<String, Map<String, IndexMutation>> mutationsToExecute = mutations;
+            
+            try {
+                BackendOperation.execute(new Callable<Boolean>() {
+                    @Override
+                    public Boolean call() throws Exception {
+                        index.mutate(mutationsToExecute, keyInformation, indexTx);
+                        return true;
+                    }
 
-                @Override
-                public String toString() {
-                    return "IndexMutation";
+                    @Override
+                    public String toString() {
+                        return "IndexMutation";
+                    }
+                }, maxWriteTime);
+            } catch (JanusGraphException e) {
+                // After all retries are exhausted, notify the index provider to handle the failure
+                // This allows providers to implement custom failure handling (e.g., DLQ, alerts, etc.)
+                try {
+                    index.handleMutationFailure(mutationsToExecute, e);
+                } catch (Exception handlerEx) {
+                    // Don't let failure handler exceptions mask the original exception
+                    log.warn("Failed to handle mutation failure", handlerEx);
                 }
-            }, maxWriteTime);
+                throw e;
+            }
 
             mutations=null;
         }

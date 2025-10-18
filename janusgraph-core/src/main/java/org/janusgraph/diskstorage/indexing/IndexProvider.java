@@ -155,4 +155,18 @@ public interface IndexProvider extends IndexInformation {
      */
     boolean exists() throws BackendException;
 
+    /**
+     * Called after all retry attempts have been exhausted for a mutation operation.
+     * This allows index providers to handle failures (e.g., write to dead letter queue, send alerts, etc.)
+     * 
+     * Default implementation does nothing. Index providers can override this method to implement
+     * custom failure handling logic.
+     * 
+     * @param mutations The mutations that failed after all retries
+     * @param cause The exception that caused the final failure
+     */
+    default void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
+        // Default: no-op. Index providers can override to implement failure handling.
+    }
+
 }
