@@ -42,7 +42,7 @@ import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.es.compat.AbstractESCompat;
 import org.janusgraph.diskstorage.es.compat.ESCompatUtils;
 import org.janusgraph.diskstorage.es.dlq.ElasticSearchDLQ;
-import org.janusgraph.diskstorage.es.dlq.KafkaElasticSearchDLQ;
+import org.janusgraph.diskstorage.es.dlq.DLQManager;
 import org.janusgraph.diskstorage.es.mapping.IndexMapping;
 import org.janusgraph.diskstorage.es.rest.util.HttpAuthTypes;
 import org.janusgraph.diskstorage.es.script.ESScriptResponse;
@@ -457,8 +457,18 @@ public class ElasticSearchIndex implements IndexProvider {
             // Can be extended later if needed
             Map<String, Object> kafkaConfig = new HashMap<>();
             
-            ElasticSearchDLQ dlqInstance = new KafkaElasticSearchDLQ(bootstrapServers, topic, kafkaConfig);
-            log.info("✅ Successfully initialized Kafka DLQ!");
+            // Use singleton DLQ manager to ensure DLQ remains open for application lifecycle
+            DLQManager dlqManager = DLQManager.getInstance();
+            ElasticSearchDLQ dlqInstance = dlqManager.getDLQ(bootstrapServers, topic, kafkaConfig);
+            
+            if (dlqInstance != null) {
+                // Increment reference count for this DLQ instance
+                dlqManager.incrementDLQReference(bootstrapServers, topic);
+                log.info("✅ Successfully initialized Kafka DLQ via DLQManager!");
+                log.info("DLQ reference count: {}", dlqManager.getReferenceCount(bootstrapServers, topic));
+            } else {
+                log.warn("⚠️  DLQManager returned null DLQ (possibly shutting down)");
+            }
             log.info("========================================");
             return dlqInstance;
             
@@ -1599,14 +1609,12 @@ public class ElasticSearchIndex implements IndexProvider {
         }
         
         // Close DLQ
+        // NOTE: Do NOT close DLQ here - it should remain open for the application lifecycle
+        // The DLQ producer should be shared across all ElasticSearchIndex instances
+        // and only closed when the entire application shuts down
         if (dlq != null) {
-            try {
-                dlq.close();
-                log.info("Closed Elasticsearch DLQ");
-            } catch (final IOException e) {
-                log.error("Failed to close DLQ", e);
-                throw new PermanentBackendException("Failed to close DLQ", e);
-            }
+            log.debug("ElasticSearchIndex closed, but DLQ remains open for continued use");
+            // TODO: Decrement reference count when we have access to bootstrap servers and topic
         }
 
     }

@@ -533,6 +533,8 @@ public class GraphDatabaseConfiguration {
 
     public static final ConfigNamespace STORAGE_NS = new ConfigNamespace(ROOT_NS,"storage","Configuration options for the storage backend.  Some options are applicable only for certain backends.");
 
+    public static final ConfigNamespace KAFKA_NS = new ConfigNamespace(ROOT_NS,"kafka","Configuration options for kafka.");
+
     /**
      * Storage root directory for those storage backends that require local storage
      */
@@ -1021,19 +1023,22 @@ public class GraphDatabaseConfiguration {
 
 
     // Dead Letter Queue Configuration
+    public static final ConfigNamespace DLQ_NS = new ConfigNamespace(KAFKA_NS,"dlq","Configuration options for kafka DL.");
+
+    public static final ConfigNamespace KAFKA_BOOTSTRAP_NS = new ConfigNamespace(KAFKA_NS,"bootstrap","Configuration options for kafka bootstrap.");
 
     public static final ConfigOption<Boolean> DLQ_ENABLED =
-        new ConfigOption<>(STORAGE_NS, "dlq-enabled",
+        new ConfigOption<>(DLQ_NS, "enabled",
             "Enable Dead Letter Queue for failed Elasticsearch mutations",
-            ConfigOption.Type.LOCAL, false);
+            ConfigOption.Type.LOCAL, true);
 
     public static final ConfigOption<String> DLQ_KAFKA_BOOTSTRAP_SERVERS =
-        new ConfigOption<>(STORAGE_NS, "dlq-kafka-bootstrap-servers",
+        new ConfigOption<>(KAFKA_BOOTSTRAP_NS, "servers",
             "Kafka bootstrap servers for DLQ (e.g., localhost:9092)",
             ConfigOption.Type.LOCAL, "");
 
     public static final ConfigOption<String> DLQ_KAFKA_TOPIC =
-        new ConfigOption<>(STORAGE_NS, "dlq-kafka-topic",
+        new ConfigOption<>(DLQ_NS, "topic",
             "Kafka topic name for DLQ",
             ConfigOption.Type.LOCAL, "ATLAS_ES_DLQ");
 
