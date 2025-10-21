@@ -8,7 +8,7 @@
     </parent>
 
     <artifactId>scylla-hadoop-util</artifactId>
-    <packaging>pom</packaging>
+    <packaging>jar</packaging>
     <name>Scylla hadoop util extraction</name>
     <url>https://janusgraph.org</url>
 
