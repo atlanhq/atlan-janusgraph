@@ -3,8 +3,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.janusgraph</groupId>
-    <artifactId>janusgraph</artifactId>
-    <version>1.0.2-SNAPSHOT</version>
+    <artifactId>janusgraph-atlan</artifactId>
+    <version>1.0.2-atlan-SNAPSHOT</version>
     <packaging>pom</packaging>
     <prerequisites>
         <maven>3.2.5</maven>
@@ -46,12 +46,12 @@
     </scm>
     <distributionManagement>
         <snapshotRepository>
-            <id>ossrh</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/atlanhq/atlan-janusgraph</url>
         </snapshotRepository>
         <repository>
-            <id>ossrh</id>
-            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/atlanhq/atlan-janusgraph</url>
         </repository>
     </distributionManagement>
     <properties>
@@ -1783,6 +1783,45 @@
                                     <runOrder>alphabetical</runOrder>
                                     <groups>PERFORMANCE_TESTS</groups>
                                     <excludedGroups />
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>atlan-release</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                                <configuration>
+                                    <quiet>true</quiet>
                                 </configuration>
                             </execution>
                         </executions>
