@@ -2,8 +2,8 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.janusgraph</groupId>
-        <artifactId>janusgraph</artifactId>
-        <version>1.0.2-SNAPSHOT</version>
+        <artifactId>janusgraph-atlan</artifactId>
+        <version>1.0.2-atlan-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>janusgraph-berkeleyje</artifactId>

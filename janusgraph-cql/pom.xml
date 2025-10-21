@@ -3,8 +3,8 @@
 
     <parent>
         <groupId>org.janusgraph</groupId>
-        <artifactId>janusgraph</artifactId>
-        <version>1.0.2-SNAPSHOT</version>
+        <artifactId>janusgraph-atlan</artifactId>
+        <version>1.0.2-atlan-SNAPSHOT</version>
     </parent>
 
     <artifactId>janusgraph-cql</artifactId>
