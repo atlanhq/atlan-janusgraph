@@ -75,12 +75,12 @@ jobs:
           echo "<settings><servers><server><id>github</id><username>$GITHUB_ACTOR</username><password>$ORG_PAT_GITHUB</password></server></servers></settings>" > ~/.m2/settings.xml
         env:
           ORG_PAT_GITHUB: ${{ secrets.ORG_PAT_GITHUB }}
-      
-              - name: Build Atlan JanusGraph JAR artifacts
-                run: mvn clean install -Patlan-release -DskipTests=true -Drat.skip=true
-      
-              - name: Deploy Atlan JanusGraph JAR artifacts to GitHub Packages
-                run: mvn deploy -Patlan-release -DskipTests=true -Drat.skip=true
+
+      - name: Build Atlan JanusGraph JAR artifacts
+        run: mvn clean install -Patlan-release -DskipTests=true -Drat.skip=true
+
+      - name: Deploy Atlan JanusGraph JAR artifacts to GitHub Packages
+        run: mvn deploy -Patlan-release -DskipTests=true -Drat.skip=true
       
       - name: Install requirements to build documentation
         run: pip3 install -r requirements.txt
