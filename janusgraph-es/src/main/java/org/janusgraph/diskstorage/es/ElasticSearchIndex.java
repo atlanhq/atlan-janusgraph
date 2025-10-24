@@ -1027,6 +1027,7 @@ public class ElasticSearchIndex implements IndexProvider {
      */
     @Override
     public void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
+        log.error("Mutation failed after all retries exhausted for index '{}'", indexName, cause);
         log.info("handleMutationFailure called - DLQ status: dlq={}, isEnabled={}", 
                  dlq != null ? "initialized" : "NULL", 
                  dlq != null && dlq.isEnabled() ? "true" : "false/null");
