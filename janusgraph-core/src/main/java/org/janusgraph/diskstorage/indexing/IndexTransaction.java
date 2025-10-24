@@ -15,7 +15,6 @@
 package org.janusgraph.diskstorage.indexing;
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.core.JanusGraphException;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.BaseTransaction;
 import org.janusgraph.diskstorage.BaseTransactionConfig;
@@ -165,7 +164,7 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
                         return "IndexMutation";
                     }
                 }, maxWriteTime);
-            } catch (JanusGraphException e) {
+            } catch (Throwable e) {
                 // After all retries are exhausted, notify the index provider to handle the failure
                 // This allows providers to implement custom failure handling (e.g., DLQ, alerts, etc.)
                 try {
@@ -174,7 +173,6 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
                     // Don't let failure handler exceptions mask the original exception
                     log.warn("Failed to handle mutation failure", handlerEx);
                 }
-                throw e;
             }
 
             mutations=null;
