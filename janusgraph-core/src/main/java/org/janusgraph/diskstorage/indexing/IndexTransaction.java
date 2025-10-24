@@ -165,12 +165,15 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
                     }
                 }, maxWriteTime);
             } catch (Throwable e) {
-                // After all retries are exhausted, notify the index provider to handle the failure
-                // This allows providers to implement custom failure handling (e.g., DLQ, alerts, etc.)
+                log.error("=== CAUGHT EXCEPTION IN FLUSHINTERNAL ===");
+                log.error("Exception type: {}", e.getClass().getName());
+                log.error("Exception message: {}", e.getMessage());
+
                 try {
+                    log.info("Calling handleMutationFailure...");
                     index.handleMutationFailure(mutationsToExecute, e);
+                    log.info("handleMutationFailure completed successfully");
                 } catch (Exception handlerEx) {
-                    // Don't let failure handler exceptions mask the original exception
                     log.warn("Failed to handle mutation failure", handlerEx);
                 }
             }
