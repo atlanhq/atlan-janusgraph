@@ -123,6 +123,11 @@ public class MetricInstrumentedIndexProvider implements IndexProvider {
     }
 
     @Override
+    public void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
+        //do nothing
+    }
+
+    @Override
     public boolean supports(final KeyInformation information, final JanusGraphPredicate janusgraphPredicate) {
         return indexProvider.supports(information, janusgraphPredicate);
     }

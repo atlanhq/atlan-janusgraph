@@ -165,8 +165,6 @@ public interface IndexProvider extends IndexInformation {
      * @param mutations The mutations that failed after all retries
      * @param cause The exception that caused the final failure
      */
-    default void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
-        // Default: no-op. Index providers can override to implement failure handling.
-    }
+    void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause);
 
 }
