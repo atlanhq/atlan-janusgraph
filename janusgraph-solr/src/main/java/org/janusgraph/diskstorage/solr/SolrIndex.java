@@ -1264,6 +1264,11 @@ public class SolrIndex implements IndexProvider {
         }
     }
 
+    @Override
+    public void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
+        
+    }
+
     /*
     ################# UTILITY METHODS #######################
      */
