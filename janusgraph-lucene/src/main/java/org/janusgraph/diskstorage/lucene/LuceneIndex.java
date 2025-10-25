@@ -1135,11 +1135,6 @@ public class LuceneIndex implements IndexProvider {
         }
     }
 
-    @Override
-    public void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
-
-    }
-
     static String getOrigFieldName(String fieldName) {
         if (isDualFieldName(fieldName)) {
             return fieldName.replaceAll(STRING_SUFFIX, "");

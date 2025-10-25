@@ -125,11 +125,6 @@ public class TestMockIndexProvider implements IndexProvider {
     }
 
     @Override
-    public void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
-        //do nothing
-    }
-
-    @Override
     public boolean supports(KeyInformation information, JanusGraphPredicate janusgraphPredicate) {
         return index.supports(information,janusgraphPredicate);
     }

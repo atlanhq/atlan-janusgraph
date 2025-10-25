@@ -34,6 +34,9 @@ import org.janusgraph.core.schema.Parameter;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.BaseTransactionConfig;
 import org.janusgraph.diskstorage.EntryMetaData;
+import org.janusgraph.diskstorage.configuration.BasicConfiguration;
+import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
+import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
 import org.janusgraph.diskstorage.util.StandardBaseTransactionConfig;
 import org.janusgraph.diskstorage.util.time.TimestampProviders;
 import org.janusgraph.graphdb.internal.Order;
@@ -67,6 +70,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.hamcrest.Matchers.is;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.ROOT_NS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -185,8 +189,9 @@ public abstract class IndexProviderTest {
     }
 
     public IndexTransaction openTx() throws BackendException {
+        ModifiableConfiguration localConfiguration = new ModifiableConfiguration(ROOT_NS, new CommonsConfiguration(), BasicConfiguration.Restriction.LOCAL);
         final BaseTransactionConfig config = StandardBaseTransactionConfig.of(TimestampProviders.MILLI);
-        return new IndexTransaction(index, indexRetriever, config, Duration.ofMillis(2000L));
+        return new IndexTransaction(index, indexRetriever, config, localConfiguration, Duration.ofMillis(2000L));
     }
 
     @AfterEach

@@ -41,8 +41,6 @@ import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.es.compat.AbstractESCompat;
 import org.janusgraph.diskstorage.es.compat.ESCompatUtils;
-import org.janusgraph.diskstorage.es.dlq.ElasticSearchDLQ;
-import org.janusgraph.diskstorage.es.dlq.DLQManager;
 import org.janusgraph.diskstorage.es.mapping.IndexMapping;
 import org.janusgraph.diskstorage.es.rest.util.HttpAuthTypes;
 import org.janusgraph.diskstorage.es.script.ESScriptResponse;
@@ -101,9 +99,6 @@ import static org.janusgraph.diskstorage.es.ElasticSearchConstants.ES_GEO_COORDS
 import static org.janusgraph.diskstorage.es.ElasticSearchConstants.ES_LANG_KEY;
 import static org.janusgraph.diskstorage.es.ElasticSearchConstants.ES_SCRIPT_KEY;
 import static org.janusgraph.diskstorage.es.ElasticSearchConstants.ES_TYPE_KEY;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DLQ_ENABLED;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DLQ_KAFKA_BOOTSTRAP_SERVERS;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DLQ_KAFKA_TOPIC;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.GRAPH_NAME;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_MAX_RESULT_SET_SIZE;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_NAME;
@@ -375,9 +370,6 @@ public class ElasticSearchIndex implements IndexProvider {
     private final boolean supportsGeoShapePrefixTree;
     private final CircleProcessor bdbCircleProcessor;
     
-    // Dead Letter Queue
-    private final ElasticSearchDLQ dlq;
-
     public ElasticSearchIndex(Configuration config) throws BackendException {
         indexName = determineIndexName(config);
         parameterizedAdditionScriptId = generateScriptId("add");
@@ -405,78 +397,12 @@ public class ElasticSearchIndex implements IndexProvider {
         setupMaxOpenScrollContextsIfNeeded(config);
 
         setupStoredScripts();
-        
-        // Initialize Dead Letter Queue
-        this.dlq = initializeDLQ(config);
     }
 
     public static String determineIndexName(Configuration config) {
         return !config.has(INDEX_NAME) && config.has(GRAPH_NAME)
             ? config.get(GRAPH_NAME)
             : config.get(INDEX_NAME);
-    }
-    
-    private ElasticSearchDLQ initializeDLQ(Configuration config) {
-        log.info("========================================");
-        log.info("Initializing Elasticsearch DLQ...");
-        log.info("========================================");
-        
-        // Log the full config path for debugging
-        log.info("Checking config key: {}", DLQ_ENABLED.toStringWithoutRoot());
-        
-        // First try to get from config
-        boolean dlqEnabled = config.get(DLQ_ENABLED);
-        
-        log.info("DLQ enabled: {}", dlqEnabled);
-        
-        if (!dlqEnabled) {
-            log.info("Elasticsearch DLQ is DISABLED");
-            log.info("To enable, set: index.dlq.enabled=true in your configuration");
-            log.info("========================================");
-            return null;
-        }
-        
-        try {
-            log.info("DLQ is ENABLED, loading Kafka configuration...");
-            
-            String bootstrapServers = config.get(DLQ_KAFKA_BOOTSTRAP_SERVERS);
-            String topic = config.get(DLQ_KAFKA_TOPIC);
-            
-            log.info("DLQ Configuration:");
-            log.info("  Bootstrap Servers: '{}'", bootstrapServers);
-            log.info("  Topic: '{}'", topic);
-            
-            if (bootstrapServers == null || bootstrapServers.isEmpty()) {
-                log.error("❌ DLQ is enabled but kafka-bootstrap-servers is not configured. DLQ will be disabled.");
-                log.error("Please set: index.dlq.kafka-bootstrap-servers=<your-kafka-servers>");
-                log.info("========================================");
-                return null;
-            }
-            
-            // Additional Kafka configuration can be passed as empty map for now
-            // Can be extended later if needed
-            Map<String, Object> kafkaConfig = new HashMap<>();
-            
-            // Use singleton DLQ manager to ensure DLQ remains open for application lifecycle
-            DLQManager dlqManager = DLQManager.getInstance();
-            ElasticSearchDLQ dlqInstance = dlqManager.getDLQ(bootstrapServers, topic, kafkaConfig);
-            
-            if (dlqInstance != null) {
-                // Increment reference count for this DLQ instance
-                dlqManager.incrementDLQReference(bootstrapServers, topic);
-                log.info("✅ Successfully initialized Kafka DLQ via DLQManager!");
-                log.info("DLQ reference count: {}", dlqManager.getReferenceCount(bootstrapServers, topic));
-            } else {
-                log.warn("⚠️  DLQManager returned null DLQ (possibly shutting down)");
-            }
-            log.info("========================================");
-            return dlqInstance;
-            
-        } catch (Exception e) {
-            log.error("❌ Failed to initialize DLQ. DLQ will be disabled.", e);
-            log.info("========================================");
-            return null;
-        }
     }
     
     private void checkClusterHealth(String healthCheck) throws BackendException {
@@ -1017,45 +943,6 @@ public class ElasticSearchIndex implements IndexProvider {
         }
     }
     
-    /**
-     * Handles mutation failure after all retries have been exhausted.
-     * This is called by the transaction layer when BackendOperation.execute() fails.
-     * Writes the failed mutations to the configured Dead Letter Queue (DLQ) if enabled.
-     *
-     * @param mutations The mutations that failed after all retry attempts
-     * @param cause The exception that caused the final failure
-     */
-    @Override
-    public void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
-        log.error("Mutation failed after all retries exhausted for index '{}'", indexName, cause);
-        log.info("handleMutationFailure called - DLQ status: dlq={}, isEnabled={}", 
-                 dlq != null ? "initialized" : "NULL", 
-                 dlq != null && dlq.isEnabled() ? "true" : "false/null");
-        
-        if (dlq == null) {
-            log.warn("❌ DLQ is NULL! Failed mutations will NOT be written to DLQ.");
-            log.warn("This means DLQ was not properly initialized during ElasticSearchIndex construction.");
-            log.warn("Check startup logs for DLQ initialization messages.");
-            log.warn("Ensure 'index.search.elasticsearch.dlq.enabled=true' is set in your JanusGraph configuration.");
-            return;
-        }
-        
-        if (!dlq.isEnabled()) {
-            log.warn("DLQ is initialized but not enabled. Failed mutations will not be written.");
-            return;
-        }
-        
-        try {
-            // Try to determine which store failed from the mutations
-            String storeName = mutations.isEmpty() ? "unknown" : mutations.keySet().iterator().next();
-            log.info("Writing failed mutations to DLQ for stores: {}", mutations.keySet());
-            dlq.writeToDLQ(indexName, mutations, storeName, cause);
-            log.info("✅ Successfully written failed mutations to DLQ for stores: {}", mutations.keySet());
-        } catch (Exception dlqEx) {
-            log.error("❌ Failed to write to DLQ after retry exhaustion", dlqEx);
-        }
-    }
-
     private List<Map<String, Object>> getParameters(KeyInformation.StoreRetriever storeRetriever,
                                                     List<IndexEntry> entries,
                                                     boolean deletion,
@@ -1608,16 +1495,6 @@ public class ElasticSearchIndex implements IndexProvider {
         } catch (final IOException e) {
             throw new PermanentBackendException(e);
         }
-        
-        // Close DLQ
-        // NOTE: Do NOT close DLQ here - it should remain open for the application lifecycle
-        // The DLQ producer should be shared across all ElasticSearchIndex instances
-        // and only closed when the entire application shuts down
-        if (dlq != null) {
-            log.debug("ElasticSearchIndex closed, but DLQ remains open for continued use");
-            // TODO: Decrement reference count when we have access to bootstrap servers and topic
-        }
-
     }
 
     @Override

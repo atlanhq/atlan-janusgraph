@@ -197,7 +197,7 @@ public class ElasticsearchConfigTest {
         final KeyInformation.IndexRetriever indexRetriever = IndexProviderTest
             .getIndexRetriever(IndexProviderTest.getMapping(idx.getFeatures(), ANALYZER_ENGLISH, ANALYZER_KEYWORD, preferredGeoShapeMapping()));
         final BaseTransactionConfig txConfig = StandardBaseTransactionConfig.of(TimestampProviders.MILLI);
-        final IndexTransaction itx = new IndexTransaction(idx, indexRetriever, txConfig, maxWrite);
+        final IndexTransaction itx = new IndexTransaction(idx, indexRetriever, txConfig, indexConfig, maxWrite);
         try {
             idx.register(storeName, "date", IndexProviderTest.getMapping(idx.getFeatures(), ANALYZER_ENGLISH, ANALYZER_KEYWORD, preferredGeoShapeMapping()).get("date"), itx);
             fail("should fail");
@@ -293,7 +293,7 @@ public class ElasticsearchConfigTest {
         final KeyInformation.IndexRetriever indexRetriever = IndexProviderTest
             .getIndexRetriever(IndexProviderTest.getMapping(idx.getFeatures(), ANALYZER_ENGLISH, ANALYZER_KEYWORD, preferredGeoShapeMapping()));
         final BaseTransactionConfig txConfig = StandardBaseTransactionConfig.of(TimestampProviders.MILLI);
-        final IndexTransaction itx = new IndexTransaction(idx, indexRetriever, txConfig, maxWrite);
+        final IndexTransaction itx = new IndexTransaction(idx, indexRetriever, txConfig, indexConfig, maxWrite);
 
         // Test that the "date" property works well.
         idx.register(storeName, "date", IndexProviderTest.getMapping(idx.getFeatures(), ANALYZER_ENGLISH, ANALYZER_KEYWORD, preferredGeoShapeMapping()).get("date"), itx);
@@ -312,9 +312,13 @@ public class ElasticsearchConfigTest {
         final Duration maxWrite = Duration.ofMillis(2000L);
         final String storeName = "jvmlocal_test_store";
         final KeyInformation.IndexRetriever indexRetriever = IndexProviderTest.getIndexRetriever(IndexProviderTest.getMapping(idx.getFeatures(), ANALYZER_STANDARD, ANALYZER_KEYWORD, preferredGeoShapeMapping()));
+        final ModifiableConfiguration modifiableConfiguration = esr
+            .setConfiguration(GraphDatabaseConfiguration.buildGraphConfiguration(), INDEX_NAME)
+            .set(USE_EXTERNAL_MAPPINGS, true, INDEX_NAME);
 
+        final Configuration indexConfig = modifiableConfiguration.restrictTo(INDEX_NAME);
         final BaseTransactionConfig txConfig = StandardBaseTransactionConfig.of(TimestampProviders.MILLI);
-        IndexTransaction itx = new IndexTransaction(idx, indexRetriever, txConfig, maxWrite);
+        IndexTransaction itx = new IndexTransaction(idx, indexRetriever, txConfig, indexConfig, maxWrite);
         for (final Entry<String, KeyInformation> entry : IndexProviderTest.getMapping(idx.getFeatures(), "english", "keyword", preferredGeoShapeMapping()).entrySet()) {
            idx.register(storeName, entry.getKey(), entry.getValue(), itx);
         }
@@ -322,7 +326,7 @@ public class ElasticsearchConfigTest {
         itx.add(storeName, "doc", IndexProviderTest.NAME, "alice", false);
         itx.commit();
         Thread.sleep(1500L); // Slightly longer than default 1s index.refresh_interval
-        itx = new IndexTransaction(idx, indexRetriever, txConfig, maxWrite);
+        itx = new IndexTransaction(idx, indexRetriever, txConfig, indexConfig, maxWrite);
         assertEquals(0, itx.queryStream(new IndexQuery(storeName, PredicateCondition.of(IndexProviderTest.NAME, Text.PREFIX, "zed"))).count());
         assertEquals(1, itx.queryStream(new IndexQuery(storeName, PredicateCondition.of(IndexProviderTest.NAME, Text.PREFIX, "ali"))).count());
         itx.rollback();
@@ -358,7 +362,7 @@ public class ElasticsearchConfigTest {
         final KeyInformation.IndexRetriever indexRetriever = IndexProviderTest
             .getIndexRetriever(IndexProviderTest.getMapping(idx.getFeatures(), ANALYZER_ENGLISH, ANALYZER_KEYWORD, preferredGeoShapeMapping()));
         final BaseTransactionConfig txConfig = StandardBaseTransactionConfig.of(TimestampProviders.MILLI);
-        final IndexTransaction itx = new IndexTransaction(idx, indexRetriever, txConfig, maxWrite);
+        final IndexTransaction itx = new IndexTransaction(idx, indexRetriever, txConfig, indexConfig, maxWrite);
         try {
             idx.register(storeName, "date", IndexProviderTest.getMapping(idx.getFeatures(), ANALYZER_ENGLISH, ANALYZER_KEYWORD, preferredGeoShapeMapping()).get("date"), itx);
             fail("should fail");
