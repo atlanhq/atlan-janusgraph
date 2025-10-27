@@ -61,14 +61,12 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
     private final Duration maxWriteTime;
 
     private Map<String,Map<String,IndexMutation>> mutations;
-
-    // Dead Letter Queue
-    private final ElasticSearchDLQ dlq;
     private final String indexName;
+    private final Configuration indexConfig;
 
     public IndexTransaction(final IndexProvider index, final KeyInformation.IndexRetriever keyInformation,
                             BaseTransactionConfig config,
-                            Configuration disConfig,
+                            Configuration indexConfig,
                             Duration maxWriteTime) throws BackendException {
         Preconditions.checkNotNull(index);
         Preconditions.checkNotNull(keyInformation);
@@ -79,7 +77,7 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
         this.maxWriteTime = maxWriteTime;
         this.mutations = new HashMap<>(DEFAULT_OUTER_MAP_SIZE);
         // Initialize Dead Letter Queue
-        this.dlq = initializeDLQ(disConfig);
+        this.indexConfig = indexConfig;
         this.indexName = GraphDatabaseConfiguration.INDEX_NAME.getDefaultValue();
     }
 
@@ -234,20 +232,12 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
      * @param cause The exception that caused the final failure
      */
     private void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
-        log.error("Mutation failed after all retries exhausted for index '{}'", indexName, cause);
-        log.info("handleMutationFailure called - DLQ status: dlq={}, isEnabled={}",
-            dlq != null ? "initialized" : "NULL",
-            dlq != null && dlq.isEnabled() ? "true" : "false/null");
-
-        if (dlq == null) {
-            log.warn("❌ DLQ is NULL! Failed mutations will NOT be written to DLQ.");
-            log.warn("This means DLQ was not properly initialized during ElasticSearchIndex construction.");
-            log.warn("Check startup logs for DLQ initialization messages.");
-            log.warn("Ensure 'index.search.elasticsearch.dlq.enabled=true' is set in your JanusGraph configuration.");
+        if (getDlq(this.indexConfig) == null) {
+            log.warn("DLQ is NULL! Failed mutations will NOT be written to DLQ.");
             return;
         }
 
-        if (!dlq.isEnabled()) {
+        if (!getDlq(this.indexConfig).isEnabled()) {
             log.warn("DLQ is initialized but not enabled. Failed mutations will not be written.");
             return;
         }
@@ -256,72 +246,38 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
             // Try to determine which store failed from the mutations
             String storeName = mutations.isEmpty() ? "unknown" : mutations.keySet().iterator().next();
             log.info("Writing failed mutations to DLQ for stores: {}", mutations.keySet());
-            dlq.writeToDLQ(indexName, mutations, storeName, cause);
-            log.info("✅ Successfully written failed mutations to DLQ for stores: {}", mutations.keySet());
+            getDlq(this.indexConfig).writeToDLQ(indexName, mutations, storeName, cause);
+            log.info("Successfully written failed mutations to DLQ for stores: {}", mutations.keySet());
         } catch (Exception dlqEx) {
-            log.error("❌ Failed to write to DLQ after retry exhaustion", dlqEx);
+            log.error("Failed to write to DLQ after retry exhaustion", dlqEx);
         }
     }
 
-    private ElasticSearchDLQ initializeDLQ(Configuration config) {
-        log.info("========================================");
-        log.info("Initializing Elasticsearch DLQ...");
-        log.info("========================================");
-
-        // Log the full config path for debugging
-        log.info("Checking config key: {}", DLQ_ENABLED.toStringWithoutRoot());
-
+    private ElasticSearchDLQ getDlq(Configuration config) {
         // First try to get from config
         boolean dlqEnabled = config.get(DLQ_ENABLED);
-
-        log.info("DLQ enabled: {}", dlqEnabled);
-
         if (!dlqEnabled) {
             log.info("Elasticsearch DLQ is DISABLED");
             log.info("To enable, set: index.dlq.enabled=true in your configuration");
-            log.info("========================================");
             return null;
         }
 
         try {
-            log.info("DLQ is ENABLED, loading Kafka configuration...");
-
+            // Use singleton DLQ manager to ensure DLQ remains open for application lifecycle
             String bootstrapServers = config.get(DLQ_KAFKA_BOOTSTRAP_SERVERS);
             String topic = config.get(DLQ_KAFKA_TOPIC);
-
-            log.info("DLQ Configuration:");
-            log.info("  Bootstrap Servers: '{}'", bootstrapServers);
-            log.info("  Topic: '{}'", topic);
+            Map<String, Object> kafkaConfig = new HashMap<>();
 
             if (bootstrapServers == null || bootstrapServers.isEmpty()) {
-                log.error("❌ DLQ is enabled but kafka-bootstrap-servers is not configured. DLQ will be disabled.");
+                log.error("DLQ is enabled but kafka-bootstrap-servers is not configured. DLQ will be disabled.");
                 log.error("Please set: index.dlq.kafka-bootstrap-servers=<your-kafka-servers>");
-                log.info("========================================");
                 return null;
             }
 
-            // Additional Kafka configuration can be passed as empty map for now
-            // Can be extended later if needed
-            Map<String, Object> kafkaConfig = new HashMap<>();
-
-            // Use singleton DLQ manager to ensure DLQ remains open for application lifecycle
             DLQManager dlqManager = DLQManager.getInstance();
-            ElasticSearchDLQ dlqInstance = dlqManager.getDLQ(bootstrapServers, topic, kafkaConfig);
-
-            if (dlqInstance != null) {
-                // Increment reference count for this DLQ instance
-                dlqManager.incrementDLQReference(bootstrapServers, topic);
-                log.info("✅ Successfully initialized Kafka DLQ via DLQManager!");
-                log.info("DLQ reference count: {}", dlqManager.getReferenceCount(bootstrapServers, topic));
-            } else {
-                log.warn("⚠️  DLQManager returned null DLQ (possibly shutting down)");
-            }
-            log.info("========================================");
-            return dlqInstance;
-
+            return dlqManager.getDLQ(bootstrapServers, topic, kafkaConfig);
         } catch (Exception e) {
-            log.error("❌ Failed to initialize DLQ. DLQ will be disabled.", e);
-            log.info("========================================");
+            log.error("Failed to initialize DLQ. DLQ will be disabled.", e);
             return null;
         }
     }
