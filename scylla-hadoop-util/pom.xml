@@ -4,7 +4,7 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph-atlan</artifactId>
-        <version>1.0.2-atlan-SNAPSHOT</version>
+        <version>1.0.2-atlan</version>
     </parent>
 
     <artifactId>scylla-hadoop-util</artifactId>

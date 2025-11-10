@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.janusgraph</groupId>
     <artifactId>janusgraph-atlan</artifactId>
-    <version>1.0.2-atlan-SNAPSHOT</version>
+    <version>1.0.2-atlan</version>
     <packaging>pom</packaging>
     <prerequisites>
         <maven>3.2.5</maven>
