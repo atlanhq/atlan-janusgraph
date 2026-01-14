@@ -517,7 +517,27 @@ public class ElasticSearchIndex implements IndexProvider {
         }
         
         // Check if this is a retryable exception by examining the exception chain
+        // We need to scan the entire chain first to check for permanent errors,
+        // as they take precedence over temporary errors
         Throwable cause = esException;
+        while (cause != null) {
+            final String message = cause.getMessage() != null ? cause.getMessage().toLowerCase() : "";
+            
+            // Validation errors, mapping errors, and other permanent failures - check these FIRST
+            // as they take precedence over temporary/retryable errors
+            if (message.contains("mapper_parsing_exception") ||
+                message.contains("illegal_argument_exception") ||
+                message.contains("parsing_exception") ||
+                message.contains("version_conflict") ||
+                message.contains("strict_dynamic_mapping_exception")) {
+                return new PermanentBackendException("Permanent ES error: " + esException.getMessage(), esException);
+            }
+            
+            cause = cause.getCause();
+        }
+        
+        // Now check for temporary/retryable errors in the exception chain
+        cause = esException;
         while (cause != null) {
             final String className = cause.getClass().getName();
             final String message = cause.getMessage() != null ? cause.getMessage().toLowerCase() : "";
@@ -552,16 +572,6 @@ public class ElasticSearchIndex implements IndexProvider {
             }
             
             cause = cause.getCause();
-        }
-        
-        // Validation errors, mapping errors, and other permanent failures
-        final String exMessage = esException.getMessage() != null ? esException.getMessage().toLowerCase() : "";
-        if (exMessage.contains("mapper_parsing_exception") ||
-            exMessage.contains("illegal_argument_exception") ||
-            exMessage.contains("parsing_exception") ||
-            exMessage.contains("version_conflict") ||
-            exMessage.contains("strict_dynamic_mapping_exception")) {
-            return new PermanentBackendException("Permanent ES error: " + esException.getMessage(), esException);
         }
         
         // Default to TemporaryBackendException to allow retries for unknown IOException types
