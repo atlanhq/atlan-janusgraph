@@ -21,6 +21,9 @@ import com.google.common.collect.Iterators;
 import com.google.common.collect.LinkedListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
+import org.apache.http.HttpEntity;
+import org.apache.http.util.EntityUtils;
+import org.elasticsearch.client.ResponseException;
 import org.elasticsearch.client.RestClientBuilder;
 import org.janusgraph.core.Cardinality;
 import org.janusgraph.core.JanusGraphException;
@@ -515,24 +518,43 @@ public class ElasticSearchIndex implements IndexProvider {
         if (esException instanceof InterruptedException) {
             return new TemporaryBackendException("Interrupted while waiting for response", esException);
         }
-        
+
         // Check if this is a retryable exception by examining the exception chain
         // We need to scan the entire chain first to check for permanent errors,
         // as they take precedence over temporary errors
         Throwable cause = esException;
         while (cause != null) {
-            final String message = cause.getMessage() != null ? cause.getMessage().toLowerCase() : "";
-            
-            // Validation errors, mapping errors, and other permanent failures - check these FIRST
-            // as they take precedence over temporary/retryable errors
-            if (message.contains("mapper_parsing_exception") ||
+            String message = cause.getMessage() != null ? cause.getMessage().toLowerCase() : "";
+
+            // For ResponseException, the actual error details are in the response body, not getMessage()
+            // We need to extract the response body to check for permanent errors
+            if (cause instanceof ResponseException) {
+                try {
+                    ResponseException re = (ResponseException) cause;
+                    HttpEntity entity = re.getResponse().getEntity();
+                    if (entity != null) {
+                        String responseBody = EntityUtils.toString(entity);
+                        if (responseBody != null) {
+                            message = message + " " + responseBody.toLowerCase();
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // If we can't read the response body, continue with the original message
+                }
+            }
+
+            boolean hasPermanentError = message.contains("mapper_parsing_exception") ||
                 message.contains("illegal_argument_exception") ||
                 message.contains("parsing_exception") ||
                 message.contains("version_conflict") ||
-                message.contains("strict_dynamic_mapping_exception")) {
+                message.contains("strict_dynamic_mapping_exception");
+
+            // Validation errors, mapping errors, and other permanent failures - check these FIRST
+            // as they take precedence over temporary/retryable errors
+            if (hasPermanentError) {
                 return new PermanentBackendException("Permanent ES error: " + esException.getMessage(), esException);
             }
-            
+
             cause = cause.getCause();
         }
         
@@ -552,11 +574,17 @@ public class ElasticSearchIndex implements IndexProvider {
             }
             
             // HTTP status codes that indicate temporary failures
-            if (message.contains("503") || message.contains("service unavailable") ||
-                message.contains("429") || message.contains("too many requests") ||
-                message.contains("408") || message.contains("request timeout") ||
-                message.contains("502") || message.contains("bad gateway") ||
-                message.contains("504") || message.contains("gateway timeout")) {
+            // Use word boundaries to avoid matching status codes in document IDs (e.g., '1v2a408')
+            if (message.contains("service unavailable") ||
+                message.contains("too many requests") ||
+                message.contains("request timeout") ||
+                message.contains("bad gateway") ||
+                message.contains("gateway timeout") ||
+                message.matches(".*\\b503\\b.*") ||
+                message.matches(".*\\b429\\b.*") ||
+                message.matches(".*\\b408\\b.*") ||
+                message.matches(".*\\b502\\b.*") ||
+                message.matches(".*\\b504\\b.*")) {
                 return new TemporaryBackendException("Temporary ES server error: " + cause.getMessage(), esException);
             }
             
