@@ -21,6 +21,9 @@ import com.google.common.collect.Iterators;
 import com.google.common.collect.LinkedListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
+import org.apache.http.HttpEntity;
+import org.apache.http.util.EntityUtils;
+import org.elasticsearch.client.ResponseException;
 import org.elasticsearch.client.RestClientBuilder;
 import org.janusgraph.core.Cardinality;
 import org.janusgraph.core.JanusGraphException;
@@ -369,7 +372,7 @@ public class ElasticSearchIndex implements IndexProvider {
     private final String parameterizedDeletionScriptId;
     private final boolean supportsGeoShapePrefixTree;
     private final CircleProcessor bdbCircleProcessor;
-
+    
     public ElasticSearchIndex(Configuration config) throws BackendException {
         indexName = determineIndexName(config);
         parameterizedAdditionScriptId = generateScriptId("add");
@@ -404,7 +407,7 @@ public class ElasticSearchIndex implements IndexProvider {
             ? config.get(GRAPH_NAME)
             : config.get(INDEX_NAME);
     }
-
+    
     private void checkClusterHealth(String healthCheck) throws BackendException {
         try {
             client.clusterHealthRequest(healthCheck);
@@ -514,9 +517,99 @@ public class ElasticSearchIndex implements IndexProvider {
     private BackendException convert(Exception esException) {
         if (esException instanceof InterruptedException) {
             return new TemporaryBackendException("Interrupted while waiting for response", esException);
-        } else {
-            return new PermanentBackendException("Unknown exception while executing index operation", esException);
         }
+
+        // Check if this is a retryable exception by examining the exception chain
+        // We need to scan the entire chain first to check for permanent errors,
+        // as they take precedence over temporary errors
+        Throwable cause = esException;
+        while (cause != null) {
+            String message = cause.getMessage() != null ? cause.getMessage().toLowerCase() : "";
+
+            // For ResponseException, the actual error details are in the response body, not getMessage()
+            // We need to extract the response body to check for permanent errors
+            if (cause instanceof ResponseException) {
+                try {
+                    ResponseException re = (ResponseException) cause;
+                    HttpEntity entity = re.getResponse().getEntity();
+                    if (entity != null) {
+                        String responseBody = EntityUtils.toString(entity);
+                        if (responseBody != null) {
+                            message = message + " " + responseBody.toLowerCase();
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // If we can't read the response body, continue with the original message
+                }
+            }
+
+            boolean hasPermanentError = message.contains("mapper_parsing_exception") ||
+                message.contains("illegal_argument_exception") ||
+                message.contains("parsing_exception") ||
+                message.contains("version_conflict") ||
+                message.contains("strict_dynamic_mapping_exception");
+
+            // Validation errors, mapping errors, and other permanent failures - check these FIRST
+            // as they take precedence over temporary/retryable errors
+            if (hasPermanentError) {
+                return new PermanentBackendException("Permanent ES error: " + esException.getMessage(), esException);
+            }
+
+            cause = cause.getCause();
+        }
+        
+        // Now check for temporary/retryable errors in the exception chain
+        cause = esException;
+        while (cause != null) {
+            final String className = cause.getClass().getName();
+            final String message = cause.getMessage() != null ? cause.getMessage().toLowerCase() : "";
+            
+            // Network-related exceptions that should be retried
+            if (className.contains("ConnectException") ||
+                className.contains("SocketTimeoutException") ||
+                className.contains("NoHttpResponseException") ||
+                className.contains("ConnectionClosedException") ||
+                className.contains("SocketException")) {
+                return new TemporaryBackendException("Temporary network exception during ES operation: " + cause.getMessage(), esException);
+            }
+            
+            // HTTP status codes that indicate temporary failures
+            // Use word boundaries to avoid matching status codes in document IDs (e.g., '1v2a408')
+            if (message.contains("service unavailable") ||
+                message.contains("too many requests") ||
+                message.contains("request timeout") ||
+                message.contains("bad gateway") ||
+                message.contains("gateway timeout") ||
+                message.matches(".*\\b503\\b.*") ||
+                message.matches(".*\\b429\\b.*") ||
+                message.matches(".*\\b408\\b.*") ||
+                message.matches(".*\\b502\\b.*") ||
+                message.matches(".*\\b504\\b.*")) {
+                return new TemporaryBackendException("Temporary ES server error: " + cause.getMessage(), esException);
+            }
+            
+            // Cluster/node availability issues
+            if (message.contains("no available connection") ||
+                message.contains("connection refused") ||
+                message.contains("connection reset") ||
+                message.contains("broken pipe") ||
+                message.contains("connection pool shut down") ||
+                message.contains("cluster block exception") ||
+                message.contains("node not connected")) {
+                return new TemporaryBackendException("ES cluster temporarily unavailable: " + cause.getMessage(), esException);
+            }
+            
+            cause = cause.getCause();
+        }
+        
+        // Default to TemporaryBackendException to allow retries for unknown IOException types
+        // Most IOExceptions in Elasticsearch context are transient network issues
+        if (esException instanceof IOException || esException instanceof UncheckedIOException) {
+            return new TemporaryBackendException("Temporary IO exception during ES operation, will retry: " + esException.getMessage(), esException);
+        }
+        
+        // For truly unknown exceptions, treat as permanent
+        return new PermanentBackendException("Unknown exception while executing ES operation: " + esException.getMessage(), esException);
     }
 
     private static String getDualMappingName(String key) {
@@ -809,8 +902,10 @@ public class ElasticSearchIndex implements IndexProvider {
     public void mutate(Map<String, Map<String, IndexMutation>> mutations, KeyInformation.IndexRetriever information,
                        BaseTransaction tx) throws BackendException {
         final List<ElasticSearchMutation> requests = new ArrayList<>();
+        String currentStore = null; // Track which store failed for DLQ
         try {
             for (final Map.Entry<String, Map<String, IndexMutation>> stores : mutations.entrySet()) {
+                currentStore = stores.getKey();
                 final List<ElasticSearchMutation> requestByStore = new ArrayList<>();
                 final String storeName = stores.getKey();
                 final String indexStoreName = getIndexStoreName(storeName);
@@ -879,12 +974,13 @@ public class ElasticSearchIndex implements IndexProvider {
             if (!requests.isEmpty()) {
                 client.bulkRequest(requests, null);
             }
+            
         } catch (final Exception e) {
             log.error("Failed to execute bulk Elasticsearch mutation", e);
             throw convert(e);
         }
     }
-
+    
     private List<Map<String, Object>> getParameters(KeyInformation.StoreRetriever storeRetriever,
                                                     List<IndexEntry> entries,
                                                     boolean deletion,
@@ -1437,7 +1533,6 @@ public class ElasticSearchIndex implements IndexProvider {
         } catch (final IOException e) {
             throw new PermanentBackendException(e);
         }
-
     }
 
     @Override

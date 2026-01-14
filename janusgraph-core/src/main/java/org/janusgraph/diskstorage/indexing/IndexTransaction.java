@@ -19,10 +19,16 @@ import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.BaseTransaction;
 import org.janusgraph.diskstorage.BaseTransactionConfig;
 import org.janusgraph.diskstorage.LoggableTransaction;
+import org.janusgraph.diskstorage.configuration.Configuration;
+import org.janusgraph.diskstorage.dlq.DLQManager;
+import org.janusgraph.diskstorage.dlq.ElasticSearchDLQ;
 import org.janusgraph.diskstorage.util.BackendOperation;
+import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 import org.janusgraph.graphdb.database.idhandling.VariableLong;
 import org.janusgraph.graphdb.database.serialize.DataOutput;
 import org.janusgraph.graphdb.tinkerpop.optimize.step.Aggregation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -30,6 +36,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.stream.Stream;
+
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DLQ_ENABLED;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DLQ_KAFKA_BOOTSTRAP_SERVERS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DLQ_KAFKA_TOPIC;
 
 /**
  * Wraps the transaction handle of an index and buffers all mutations against an index for efficiency.
@@ -39,7 +49,8 @@ import java.util.stream.Stream;
  */
 
 public class IndexTransaction implements BaseTransaction, LoggableTransaction {
-
+    private static final Logger log =
+        LoggerFactory.getLogger(IndexTransaction.class);
     private static final int DEFAULT_OUTER_MAP_SIZE = 3;
     private static final int DEFAULT_INNER_MAP_SIZE = 5;
 
@@ -50,9 +61,12 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
     private final Duration maxWriteTime;
 
     private Map<String,Map<String,IndexMutation>> mutations;
+    private final String indexName;
+    private final Configuration indexConfig;
 
     public IndexTransaction(final IndexProvider index, final KeyInformation.IndexRetriever keyInformation,
                             BaseTransactionConfig config,
+                            Configuration indexConfig,
                             Duration maxWriteTime) throws BackendException {
         Preconditions.checkNotNull(index);
         Preconditions.checkNotNull(keyInformation);
@@ -62,6 +76,9 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
         Preconditions.checkNotNull(indexTx);
         this.maxWriteTime = maxWriteTime;
         this.mutations = new HashMap<>(DEFAULT_OUTER_MAP_SIZE);
+        // Initialize Dead Letter Queue
+        this.indexConfig = indexConfig;
+        this.indexName = GraphDatabaseConfiguration.INDEX_NAME.getDefaultValue();
     }
 
     public void add(String store, String documentId, IndexEntry entry, boolean isNew) {
@@ -136,8 +153,6 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
         indexTx.rollback();
     }
 
-
-
     private void flushInternal() throws BackendException {
         if (mutations!=null && !mutations.isEmpty()) {
             //Consolidate all mutations prior to persistence to ensure that no addition accidentally gets swallowed by a delete
@@ -145,18 +160,35 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
                 for (IndexMutation mut : store.values()) mut.consolidate();
             }
 
-            BackendOperation.execute(new Callable<Boolean>() {
-                @Override
-                public Boolean call() throws Exception {
-                    index.mutate(mutations, keyInformation, indexTx);
-                    return true;
-                }
+            // Keep a reference to mutations for failure handling if retries fail
+            final Map<String, Map<String, IndexMutation>> mutationsToExecute = mutations;
+            
+            try {
+                BackendOperation.execute(new Callable<Boolean>() {
+                    @Override
+                    public Boolean call() throws Exception {
+                        index.mutate(mutationsToExecute, keyInformation, indexTx);
+                        return true;
+                    }
 
-                @Override
-                public String toString() {
-                    return "IndexMutation";
+                    @Override
+                    public String toString() {
+                        return "IndexMutation";
+                    }
+                }, maxWriteTime);
+            } catch (Throwable e) {
+                log.error("=== CAUGHT EXCEPTION IN FLUSHINTERNAL ===");
+                log.error("Exception type: {}", e.getClass().getName());
+                log.error("Exception message: {}", e.getMessage());
+
+                try {
+                    log.info("Calling handleMutationFailure...");
+                    handleMutationFailure(mutationsToExecute, e);
+                    log.info("handleMutationFailure completed successfully");
+                } catch (Exception handlerEx) {
+                    log.warn("Failed to handle mutation failure", handlerEx);
                 }
-            }, maxWriteTime);
+            }
 
             mutations=null;
         }
@@ -189,5 +221,64 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
 
     public void invalidate(String store) {
         keyInformation.invalidate(store);
+    }
+
+    /**
+     * Handles mutation failure after all retries have been exhausted.
+     * This is called by the transaction layer when BackendOperation.execute() fails.
+     * Writes the failed mutations to the configured Dead Letter Queue (DLQ) if enabled.
+     *
+     * @param mutations The mutations that failed after all retry attempts
+     * @param cause The exception that caused the final failure
+     */
+    private void handleMutationFailure(Map<String, Map<String, IndexMutation>> mutations, Throwable cause) {
+        if (getDlq(this.indexConfig) == null) {
+            log.warn("DLQ is NULL! Failed mutations will NOT be written to DLQ.");
+            return;
+        }
+
+        if (!getDlq(this.indexConfig).isEnabled()) {
+            log.warn("DLQ is initialized but not enabled. Failed mutations will not be written.");
+            return;
+        }
+
+        try {
+            // Try to determine which store failed from the mutations
+            String storeName = mutations.isEmpty() ? "unknown" : mutations.keySet().iterator().next();
+            log.info("Writing failed mutations to DLQ for stores: {}", mutations.keySet());
+            getDlq(this.indexConfig).writeToDLQ(indexName, mutations, storeName, cause);
+            log.info("Successfully written failed mutations to DLQ for stores: {}", mutations.keySet());
+        } catch (Exception dlqEx) {
+            log.error("Failed to write to DLQ after retry exhaustion", dlqEx);
+        }
+    }
+
+    private ElasticSearchDLQ getDlq(Configuration config) {
+        // First try to get from config
+        boolean dlqEnabled = config.get(DLQ_ENABLED);
+        if (!dlqEnabled) {
+            log.info("Elasticsearch DLQ is DISABLED");
+            log.info("To enable, set: index.dlq.enabled=true in your configuration");
+            return null;
+        }
+
+        try {
+            // Use singleton DLQ manager to ensure DLQ remains open for application lifecycle
+            String bootstrapServers = config.get(DLQ_KAFKA_BOOTSTRAP_SERVERS);
+            String topic = config.get(DLQ_KAFKA_TOPIC);
+            Map<String, Object> kafkaConfig = new HashMap<>();
+
+            if (bootstrapServers == null || bootstrapServers.isEmpty()) {
+                log.error("DLQ is enabled but kafka-bootstrap-servers is not configured. DLQ will be disabled.");
+                log.error("Please set: index.dlq.kafka-bootstrap-servers=<your-kafka-servers>");
+                return null;
+            }
+
+            DLQManager dlqManager = DLQManager.getInstance();
+            return dlqManager.getDLQ(bootstrapServers, topic, kafkaConfig);
+        } catch (Exception e) {
+            log.error("Failed to initialize DLQ. DLQ will be disabled.", e);
+            return null;
+        }
     }
 }

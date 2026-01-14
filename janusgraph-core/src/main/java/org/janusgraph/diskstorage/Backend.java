@@ -598,7 +598,7 @@ public class Backend implements LockerProvider, AutoCloseable {
         // Index transactions
         final Map<String, IndexTransaction> indexTx = new HashMap<>(indexes.size());
         for (Map.Entry<String, IndexProvider> entry : indexes.entrySet()) {
-            indexTx.put(entry.getKey(), new IndexTransaction(entry.getValue(), indexKeyRetriever.get(entry.getKey()), configuration, maxWriteTime));
+            indexTx.put(entry.getKey(), new IndexTransaction(entry.getValue(), indexKeyRetriever.get(entry.getKey()), configuration, this.configuration, maxWriteTime));
         }
 
         return new BackendTransaction(cacheTx, configuration, storeFeatures,

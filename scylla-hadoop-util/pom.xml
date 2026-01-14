@@ -3,11 +3,12 @@
 
     <parent>
         <groupId>org.janusgraph</groupId>
-        <artifactId>janusgraph</artifactId>
-        <version>1.0.2-SNAPSHOT</version>
+        <artifactId>janusgraph-atlan</artifactId>
+        <version>1.0.4-atlan</version>
     </parent>
 
     <artifactId>scylla-hadoop-util</artifactId>
+    <packaging>jar</packaging>
     <name>Scylla hadoop util extraction</name>
     <url>https://janusgraph.org</url>
 
