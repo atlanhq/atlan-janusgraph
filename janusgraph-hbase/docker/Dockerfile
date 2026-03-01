@@ -27,7 +27,7 @@ RUN rm -rf ./docs ./LEGAL ./*.txt ./*/*.cmd
 COPY ./hbase-site.xml /opt/hbase/conf/hbase-site.xml
 COPY ./hbase-policy.xml /opt/hbase/conf/hbase-policy.xml
 
-FROM openjdk:8-jre-buster
+FROM eclipse-temurin:8-jre
 
 ARG HBASE_UID=1000
 ARG HBASE_GID=1000
